@@ -80,6 +80,7 @@ const dashboardHTML = `<!DOCTYPE html>
                     expandedState[reqId][detailType] = true;
                 }
             });
+            console.log('Captured expanded state:', expandedState);
 
             let html = '';
             requests.forEach(function(req) {
@@ -111,6 +112,7 @@ const dashboardHTML = `<!DOCTYPE html>
                 html += '    <span class="text-sm font-semibold ' + statusClass + '">' + req.status_code + '</span></div>';
                 if (req.headers && Object.keys(req.headers).length > 0) {
                     const headersOpen = expandedState[reqIdStr] && expandedState[reqIdStr]['headers'] ? ' open' : '';
+                    if (headersOpen) console.log('Restoring headers for req', reqIdStr);
                     html += '  <details class="mt-2" data-detail-type="headers"' + headersOpen + '><summary class="text-sm font-semibold text-gray-700 cursor-pointer">Headers</summary>';
                     html += '    <div class="bg-white p-2 mt-1 rounded text-xs font-mono">';
                     Object.keys(req.headers).forEach(function(key) {
