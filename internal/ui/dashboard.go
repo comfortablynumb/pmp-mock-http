@@ -69,8 +69,21 @@ const dashboardHTML = `<!DOCTYPE html>
                 $('#requests-container').html('<p class="text-gray-500 text-center py-8">No requests yet</p>');
                 return;
             }
+
+            // Save expanded state before re-rendering
+            const expandedState = {};
+            $('#requests-container details').each(function() {
+                const reqId = $(this).closest('[data-request-id]').attr('data-request-id');
+                const detailType = $(this).attr('data-detail-type');
+                if (reqId && detailType && this.open) {
+                    if (!expandedState[reqId]) expandedState[reqId] = {};
+                    expandedState[reqId][detailType] = true;
+                }
+            });
+
             let html = '';
             requests.forEach(function(req) {
+                const reqIdStr = String(req.id); // Convert to string for consistent lookup
                 const matchedClass = req.matched ? 'border-green-500' : 'border-red-500';
                 const matchedBadge = req.matched
                     ? '<span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded">MATCHED</span>'
@@ -78,7 +91,7 @@ const dashboardHTML = `<!DOCTYPE html>
                 const timestamp = new Date(req.timestamp).toLocaleString();
                 const statusClass = req.status_code >= 200 && req.status_code < 300 ? 'text-green-600' :
                                    req.status_code >= 400 ? 'text-red-600' : 'text-yellow-600';
-                html += '<div class="border-l-4 ' + matchedClass + ' bg-gray-50 p-4 mb-4 rounded">';
+                html += '<div class="border-l-4 ' + matchedClass + ' bg-gray-50 p-4 mb-4 rounded" data-request-id="' + reqIdStr + '">';
                 html += '  <div class="flex justify-between items-start mb-2">';
                 html += '    <div class="flex items-center gap-2">';
                 html += '      <span class="font-bold text-lg">' + escapeHtml(req.method) + '</span>';
@@ -97,7 +110,8 @@ const dashboardHTML = `<!DOCTYPE html>
                 html += '  <div class="mb-2"><span class="text-sm text-gray-600">Status: </span>';
                 html += '    <span class="text-sm font-semibold ' + statusClass + '">' + req.status_code + '</span></div>';
                 if (req.headers && Object.keys(req.headers).length > 0) {
-                    html += '  <details class="mt-2"><summary class="text-sm font-semibold text-gray-700 cursor-pointer">Headers</summary>';
+                    const headersOpen = expandedState[reqIdStr] && expandedState[reqIdStr]['headers'] ? ' open' : '';
+                    html += '  <details class="mt-2" data-detail-type="headers"' + headersOpen + '><summary class="text-sm font-semibold text-gray-700 cursor-pointer">Headers</summary>';
                     html += '    <div class="bg-white p-2 mt-1 rounded text-xs font-mono">';
                     Object.keys(req.headers).forEach(function(key) {
                         html += '      <div><span class="text-gray-600">' + escapeHtml(key) + ':</span> ' + escapeHtml(req.headers[key]) + '</div>';
@@ -105,11 +119,13 @@ const dashboardHTML = `<!DOCTYPE html>
                     html += '    </div></details>';
                 }
                 if (req.body) {
-                    html += '  <details class="mt-2"><summary class="text-sm font-semibold text-gray-700 cursor-pointer">Request Body</summary>';
+                    const bodyOpen = expandedState[reqIdStr] && expandedState[reqIdStr]['body'] ? ' open' : '';
+                    html += '  <details class="mt-2" data-detail-type="body"' + bodyOpen + '><summary class="text-sm font-semibold text-gray-700 cursor-pointer">Request Body</summary>';
                     html += '    <pre class="bg-white p-2 mt-1 rounded text-xs overflow-x-auto">' + escapeHtml(req.body) + '</pre></details>';
                 }
                 if (req.response) {
-                    html += '  <details class="mt-2"><summary class="text-sm font-semibold text-gray-700 cursor-pointer">Response</summary>';
+                    const responseOpen = expandedState[reqIdStr] && expandedState[reqIdStr]['response'] ? ' open' : '';
+                    html += '  <details class="mt-2" data-detail-type="response"' + responseOpen + '><summary class="text-sm font-semibold text-gray-700 cursor-pointer">Response</summary>';
                     html += '    <pre class="bg-white p-2 mt-1 rounded text-xs overflow-x-auto">' + escapeHtml(req.response) + '</pre></details>';
                 }
                 html += '</div>';
