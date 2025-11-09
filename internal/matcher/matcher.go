@@ -33,7 +33,10 @@ func NewMatcher(mocks []models.Mock) *Matcher {
 	// Create a persistent VM for global state
 	globalVM := goja.New()
 	// Initialize global object in the VM
-	globalVM.Set("global", globalVM.NewObject())
+	if err := globalVM.Set("global", globalVM.NewObject()); err != nil {
+		// This should never fail during initialization, but handle it defensively
+		panic("failed to initialize global object in JavaScript VM: " + err.Error())
+	}
 
 	return &Matcher{
 		mocks:       sortedMocks,
