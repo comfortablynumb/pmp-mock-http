@@ -49,7 +49,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create watcher: %v\n", err)
 	}
-	defer w.Close()
+	defer w.Close() //nolint:errcheck // cleanup operation
 
 	if err := w.Start(); err != nil {
 		log.Fatalf("Failed to start watcher: %v\n", err)

@@ -92,7 +92,9 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Write response body
 	if mock.Response.Body != "" {
-		w.Write([]byte(mock.Response.Body))
+		if _, err := w.Write([]byte(mock.Response.Body)); err != nil {
+			log.Printf("Error writing response body: %v\n", err)
+		}
 	}
 
 	log.Printf("Returned %d response\n", mock.Response.StatusCode)

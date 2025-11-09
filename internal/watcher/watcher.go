@@ -98,7 +98,9 @@ func (w *Watcher) watch() {
 				if isDir {
 					// New directory created, start watching it
 					log.Printf("New directory created: %s\n", event.Name)
-					w.watcher.Add(event.Name)
+					if err := w.watcher.Add(event.Name); err != nil {
+						log.Printf("Failed to watch new directory %s: %v\n", event.Name, err)
+					}
 					w.scheduleReload(&debounceTimer, debounceDuration)
 				} else if isYAML {
 					log.Printf("New file: %s\n", event.Name)

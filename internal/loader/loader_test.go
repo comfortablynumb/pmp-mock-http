@@ -132,7 +132,7 @@ func TestLoaderReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer os.RemoveAll(tempDir) //nolint:errcheck // test cleanup
 
 	// Create initial mock file
 	mockFile := filepath.Join(tempDir, "test.yaml")
