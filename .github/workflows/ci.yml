@@ -74,7 +74,7 @@ jobs:
           go-version: '1.21'
 
       - name: Build
-        run: go build -v -o pmp-mock-http .
+        run: go build -v -o pmp-mock-http ./cmd/server
 
       - name: Verify binary
         run: ./pmp-mock-http --help || true

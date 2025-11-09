@@ -26,7 +26,7 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 ```bash
 git clone https://github.com/comfortablynumb/pmp-mock-http.git
 cd pmp-mock-http
-go build -o pmp-mock-http
+go build -o pmp-mock-http ./cmd/server
 ```
 
 ### Docker
@@ -803,7 +803,7 @@ The `mocks/` directory contains several example files demonstrating various feat
 ### Build
 
 ```bash
-go build -o pmp-mock-http
+go build -o pmp-mock-http ./cmd/server
 ```
 
 ### Run
