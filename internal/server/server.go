@@ -11,12 +11,14 @@ import (
 
 	"github.com/comfortablynumb/pmp-mock-http/internal/matcher"
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
+	"github.com/comfortablynumb/pmp-mock-http/internal/tracker"
 )
 
 // Server represents the mock HTTP server
 type Server struct {
 	port    int
 	matcher *matcher.Matcher
+	tracker *tracker.Tracker
 	mu      sync.RWMutex
 }
 
@@ -25,6 +27,16 @@ func NewServer(port int, mocks []models.Mock) *Server {
 	return &Server{
 		port:    port,
 		matcher: matcher.NewMatcher(mocks),
+		tracker: nil,
+	}
+}
+
+// NewServerWithTracker creates a new mock server with request tracking
+func NewServerWithTracker(port int, mocks []models.Mock, t *tracker.Tracker) *Server {
+	return &Server{
+		port:    port,
+		matcher: matcher.NewMatcher(mocks),
+		tracker: t,
 	}
 }
 
@@ -57,12 +69,23 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	// Log request details (limit body size to avoid hanging on large payloads)
+	bodyStr := ""
 	if len(bodyBytes) > 0 {
 		const maxLogSize = 1024 // Log up to 1KB of body
 		if len(bodyBytes) <= maxLogSize {
-			log.Printf("Request body: %s\n", string(bodyBytes))
+			bodyStr = string(bodyBytes)
+			log.Printf("Request body: %s\n", bodyStr)
 		} else {
-			log.Printf("Request body: %s... (%d bytes total)\n", string(bodyBytes[:maxLogSize]), len(bodyBytes))
+			bodyStr = string(bodyBytes[:maxLogSize]) + "..."
+			log.Printf("Request body: %s (%d bytes total)\n", bodyStr, len(bodyBytes))
+		}
+	}
+
+	// Extract headers for logging
+	headers := make(map[string]string)
+	for key, values := range r.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
 		}
 	}
 
@@ -71,12 +94,26 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Error matching request: %v\n", err)
 		http.Error(w, "Error processing request", http.StatusInternalServerError)
+		if s.tracker != nil {
+			s.tracker.Log(tracker.RequestLog{
+				Method: r.Method, URI: r.URL.RequestURI(), Headers: headers, Body: bodyStr,
+				Matched: false, StatusCode: http.StatusInternalServerError,
+				Response: "Error processing request", RemoteAddr: r.RemoteAddr,
+			})
+		}
 		return
 	}
 
 	if mock == nil {
 		log.Printf("No mock found for %s %s\n", r.Method, r.URL.Path)
 		http.NotFound(w, r)
+		if s.tracker != nil {
+			s.tracker.Log(tracker.RequestLog{
+				Method: r.Method, URI: r.URL.RequestURI(), Headers: headers, Body: bodyStr,
+				Matched: false, StatusCode: http.StatusNotFound,
+				Response: "404 page not found", RemoteAddr: r.RemoteAddr,
+			})
+		}
 		return
 	}
 
@@ -96,13 +133,24 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(mock.Response.StatusCode)
 
 	// Write response body
+	responseBody := ""
 	if mock.Response.Body != "" {
-		if _, err := w.Write([]byte(mock.Response.Body)); err != nil {
+		responseBody = mock.Response.Body
+		if _, err := w.Write([]byte(responseBody)); err != nil {
 			log.Printf("Error writing response body: %v\n", err)
 		}
 	}
 
 	log.Printf("Returned %d response\n", mock.Response.StatusCode)
+
+	// Track matched request
+	if s.tracker != nil {
+		s.tracker.Log(tracker.RequestLog{
+			Method: r.Method, URI: r.URL.RequestURI(), Headers: headers, Body: bodyStr,
+			Matched: true, MockName: mock.Name, StatusCode: mock.Response.StatusCode,
+			Response: responseBody, RemoteAddr: r.RemoteAddr,
+		})
+	}
 }
 
 // UpdateMocks updates the server's matcher with new mocks

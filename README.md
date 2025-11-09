@@ -7,6 +7,7 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 ## Features
 
 - ✅ **HTTP Server**: Listens on configurable port (default: 8083)
+- ✅ **UI Dashboard**: Real-time web dashboard on port 8081 to monitor requests, matches, and responses
 - ✅ **YAML Configuration**: Define mocks in simple YAML files
 - ✅ **Hot Reloading**: Automatically reload mocks when files change
 - ✅ **Recursive Loading**: Load mock files from nested subdirectories
@@ -70,9 +71,28 @@ docker run -p 8083:8083 -v /path/to/your/mocks:/custom/mocks pmp-mock-http --moc
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-port` | 8083 | HTTP server port |
+| `-ui-port` | 8081 | UI dashboard port |
 | `-mocks-dir` | mocks | Directory containing mock YAML files |
 | `-plugins-dir` | plugins | Directory to store plugin repositories |
 | `-plugins` | "" | Comma-separated list of git repository URLs to clone as plugins |
+
+### UI Dashboard
+
+The server automatically starts a web dashboard on port 8081 that provides real-time monitoring of all HTTP requests. Access it at **http://localhost:8081**
+
+**Features:**
+- Real-time request tracking with 2-second auto-refresh
+- Visual color-coded indicators (green=matched, red=unmatched)
+- Complete request details: method, URI, headers, body
+- Response inspection: status code, headers, body
+- Shows which mock matched (if any)
+- Statistics: total, matched, and unmatched requests
+- Clear all logs button
+
+```bash
+# Custom UI port
+./pmp-mock-http --ui-port 9000
+```
 
 ### Plugins System
 
