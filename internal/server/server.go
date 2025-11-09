@@ -147,7 +147,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if s.tracker != nil {
 		s.tracker.Log(tracker.RequestLog{
 			Method: r.Method, URI: r.URL.RequestURI(), Headers: headers, Body: bodyStr,
-			Matched: true, MockName: mock.Name, StatusCode: mock.Response.StatusCode,
+			Matched: true, MockName: mock.Name, MockConfig: mock, StatusCode: mock.Response.StatusCode,
 			Response: responseBody, RemoteAddr: r.RemoteAddr,
 		})
 	}

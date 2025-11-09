@@ -32,13 +32,14 @@ const dashboardHTML = `<!DOCTYPE html>
                     </div>
                 </div>
             </div>
-            <div class="mt-4 flex gap-2">
+            <div class="mt-4 flex gap-2 items-center">
                 <button id="refresh-btn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Refresh Now</button>
                 <button id="clear-btn" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Clear All</button>
                 <label class="flex items-center ml-4">
                     <input type="checkbox" id="auto-refresh" checked class="mr-2">
                     <span class="text-gray-700">Auto-refresh (2s)</span>
                 </label>
+                <input type="text" id="filter-input" placeholder="Filter requests (method, uri, status...)" class="ml-auto border border-gray-300 rounded px-3 py-2 w-96 text-sm">
             </div>
         </div>
         <div class="bg-white rounded-lg shadow-md p-6">
@@ -48,13 +49,30 @@ const dashboardHTML = `<!DOCTYPE html>
     </div>
     <script>
         let autoRefreshInterval = null;
+        let allRequests = [];
         function fetchRequests() {
             $.get('/api/requests', function(data) {
-                renderRequests(data);
+                allRequests = data;
+                applyFilter();
                 updateStats(data);
             }).fail(function() {
                 $('#requests-container').html('<p class="text-red-500 text-center py-8">Failed to load requests</p>');
             });
+        }
+        function applyFilter() {
+            const filterText = $('#filter-input').val().toLowerCase();
+            if (!filterText) {
+                renderRequests(allRequests);
+                return;
+            }
+            const filtered = allRequests.filter(function(req) {
+                return req.method.toLowerCase().includes(filterText) ||
+                       req.uri.toLowerCase().includes(filterText) ||
+                       String(req.status_code).includes(filterText) ||
+                       (req.mock_name && req.mock_name.toLowerCase().includes(filterText)) ||
+                       req.remote_addr.toLowerCase().includes(filterText);
+            });
+            renderRequests(filtered);
         }
         function updateStats(requests) {
             const total = requests.length;
@@ -112,7 +130,7 @@ const dashboardHTML = `<!DOCTYPE html>
                 if (req.headers && Object.keys(req.headers).length > 0) {
                     const headersOpen = expandedState[reqIdStr] && expandedState[reqIdStr]['headers'] ? ' open' : '';
                     html += '  <details class="mt-2" data-detail-type="headers"' + headersOpen + '><summary class="text-sm font-semibold text-gray-700 cursor-pointer">Headers</summary>';
-                    html += '    <div class="bg-white p-2 mt-1 rounded text-xs font-mono">';
+                    html += '    <div class="bg-white p-2 mt-1 rounded text-xs font-mono overflow-x-auto">';
                     Object.keys(req.headers).forEach(function(key) {
                         html += '      <div><span class="text-gray-600">' + escapeHtml(key) + ':</span> ' + escapeHtml(req.headers[key]) + '</div>';
                     });
@@ -126,11 +144,25 @@ const dashboardHTML = `<!DOCTYPE html>
                 if (req.response) {
                     const responseOpen = expandedState[reqIdStr] && expandedState[reqIdStr]['response'] ? ' open' : '';
                     html += '  <details class="mt-2" data-detail-type="response"' + responseOpen + '><summary class="text-sm font-semibold text-gray-700 cursor-pointer">Response</summary>';
-                    html += '    <pre class="bg-white p-2 mt-1 rounded text-xs overflow-x-auto">' + escapeHtml(req.response) + '</pre></details>';
+                    html += '    <pre class="bg-white p-2 mt-1 rounded text-xs overflow-x-auto">' + formatResponse(req.response) + '</pre></details>';
+                }
+                if (req.matched && req.mock_config) {
+                    const configOpen = expandedState[reqIdStr] && expandedState[reqIdStr]['config'] ? ' open' : '';
+                    html += '  <details class="mt-2" data-detail-type="config"' + configOpen + '><summary class="text-sm font-semibold text-gray-700 cursor-pointer">Mock Configuration</summary>';
+                    html += '    <pre class="bg-white p-2 mt-1 rounded text-xs overflow-x-auto">' + escapeHtml(JSON.stringify(req.mock_config, null, 2)) + '</pre></details>';
                 }
                 html += '</div>';
             });
             $('#requests-container').html(html);
+        }
+        function formatResponse(response) {
+            if (!response) return '';
+            try {
+                const parsed = JSON.parse(response);
+                return escapeHtml(JSON.stringify(parsed, null, 2));
+            } catch (e) {
+                return escapeHtml(response);
+            }
         }
         function escapeHtml(text) {
             if (!text) return '';
@@ -158,6 +190,7 @@ const dashboardHTML = `<!DOCTYPE html>
             $('#refresh-btn').click(fetchRequests);
             $('#clear-btn').click(clearRequests);
             $('#auto-refresh').change(updateAutoRefresh);
+            $('#filter-input').on('input', applyFilter);
             fetchRequests();
             updateAutoRefresh();
         });

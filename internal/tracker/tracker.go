@@ -3,6 +3,8 @@ package tracker
 import (
 	"sync"
 	"time"
+
+	"github.com/comfortablynumb/pmp-mock-http/internal/models"
 )
 
 type RequestLog struct {
@@ -14,6 +16,7 @@ type RequestLog struct {
 	Body        string            `json:"body"`
 	Matched     bool              `json:"matched"`
 	MockName    string            `json:"mock_name,omitempty"`
+	MockConfig  *models.Mock      `json:"mock_config,omitempty"`
 	StatusCode  int               `json:"status_code"`
 	Response    string            `json:"response"`
 	RemoteAddr  string            `json:"remote_addr"`
