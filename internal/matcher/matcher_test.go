@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
@@ -740,6 +741,220 @@ func TestMatcherJavaScriptRequestObject(t *testing.T) {
 	}
 	if match2 != nil {
 		t.Error("Expected no match with GET method")
+	}
+}
+
+func TestMatcherGlobalState(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "Create User",
+			Request: models.Request{
+				URI:    "/api/users",
+				Method: "POST",
+				JavaScript: `
+					(function() {
+						var body = JSON.parse(request.body);
+
+						// Initialize users array if it doesn't exist
+						if (!global.users) {
+							global.users = [];
+						}
+
+						// Add user to global state
+						var newUser = {
+							id: global.users.length + 1,
+							name: body.name,
+							email: body.email
+						};
+						global.users.push(newUser);
+
+						return {
+							matches: true,
+							response: {
+								status_code: 201,
+								body: JSON.stringify(newUser)
+							}
+						};
+					})()
+				`,
+			},
+		},
+		{
+			Name: "Get All Users",
+			Request: models.Request{
+				URI:    "/api/users",
+				Method: "GET",
+				JavaScript: `
+					(function() {
+						var users = global.users || [];
+						return {
+							matches: true,
+							response: {
+								status_code: 200,
+								body: JSON.stringify(users)
+							}
+						};
+					})()
+				`,
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// First, create a user
+	body1 := []byte(`{"name": "John Doe", "email": "john@example.com"}`)
+	req1 := createRequest("POST", "/api/users", nil, body1)
+	match1, err := matcher.FindMatch(req1)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if match1 == nil {
+		t.Fatal("Expected match for create user")
+	}
+	if match1.Response.StatusCode != 201 {
+		t.Errorf("Expected status 201, got %d", match1.Response.StatusCode)
+	}
+
+	// Get all users - should include the one we just created
+	req2 := createRequest("GET", "/api/users", nil, nil)
+	match2, err := matcher.FindMatch(req2)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if match2 == nil {
+		t.Fatal("Expected match for get users")
+	}
+	if !strings.Contains(match2.Response.Body, "John Doe") {
+		t.Errorf("Expected response to contain created user, got: %s", match2.Response.Body)
+	}
+
+	// Create another user
+	body3 := []byte(`{"name": "Jane Smith", "email": "jane@example.com"}`)
+	req3 := createRequest("POST", "/api/users", nil, body3)
+	match3, err := matcher.FindMatch(req3)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if match3 == nil {
+		t.Fatal("Expected match for create second user")
+	}
+
+	// Get all users again - should have both
+	req4 := createRequest("GET", "/api/users", nil, nil)
+	match4, err := matcher.FindMatch(req4)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if match4 == nil {
+		t.Fatal("Expected match for get users")
+	}
+	if !strings.Contains(match4.Response.Body, "John Doe") || !strings.Contains(match4.Response.Body, "Jane Smith") {
+		t.Errorf("Expected response to contain both users, got: %s", match4.Response.Body)
+	}
+}
+
+func TestMatcherGlobalStatePersistsAcrossUpdates(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "Set Counter",
+			Request: models.Request{
+				URI:    "/api/counter",
+				Method: "POST",
+				JavaScript: `
+					(function() {
+						global.counter = (global.counter || 0) + 1;
+						return {
+							matches: true,
+							response: {
+								status_code: 200,
+								body: JSON.stringify({counter: global.counter})
+							}
+						};
+					})()
+				`,
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// Increment counter
+	req1 := createRequest("POST", "/api/counter", nil, nil)
+	match1, err := matcher.FindMatch(req1)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !strings.Contains(match1.Response.Body, `"counter":1`) {
+		t.Errorf("Expected counter to be 1, got: %s", match1.Response.Body)
+	}
+
+	// Update mocks (simulating a file reload)
+	matcher.UpdateMocks(mocks)
+
+	// Counter should persist
+	req2 := createRequest("POST", "/api/counter", nil, nil)
+	match2, err := matcher.FindMatch(req2)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !strings.Contains(match2.Response.Body, `"counter":2`) {
+		t.Errorf("Expected counter to be 2 after mock update, got: %s", match2.Response.Body)
+	}
+}
+
+func TestMatcherGlobalStateConcurrent(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "Increment Counter",
+			Request: models.Request{
+				URI:    "/api/increment",
+				Method: "POST",
+				JavaScript: `
+					(function() {
+						global.counter = (global.counter || 0) + 1;
+						return {
+							matches: true,
+							response: {
+								status_code: 200,
+								body: JSON.stringify({counter: global.counter})
+							}
+						};
+					})()
+				`,
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// Make concurrent requests
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			req := createRequest("POST", "/api/increment", nil, nil)
+			_, err := matcher.FindMatch(req)
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+			done <- true
+		}()
+	}
+
+	// Wait for all requests
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	// Final counter check
+	req := createRequest("POST", "/api/increment", nil, nil)
+	match, err := matcher.FindMatch(req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	// Should be 11 (10 concurrent + 1 final)
+	if !strings.Contains(match.Response.Body, `"counter":11`) {
+		t.Errorf("Expected counter to be 11, got: %s", match.Response.Body)
 	}
 }
 

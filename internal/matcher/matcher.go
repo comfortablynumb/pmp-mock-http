@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
 	"github.com/dop251/goja"
@@ -14,7 +15,10 @@ import (
 
 // Matcher handles matching incoming requests to mock specifications
 type Matcher struct {
-	mocks []models.Mock
+	mocks       []models.Mock
+	globalVM    *goja.Runtime         // Persistent JS runtime for global state
+	globalState map[string]interface{} // Global state shared across JavaScript evaluations
+	stateMu     sync.RWMutex           // Mutex to protect global state
 }
 
 // NewMatcher creates a new request matcher
@@ -26,8 +30,15 @@ func NewMatcher(mocks []models.Mock) *Matcher {
 		return sortedMocks[i].Priority > sortedMocks[j].Priority
 	})
 
+	// Create a persistent VM for global state
+	globalVM := goja.New()
+	// Initialize global object in the VM
+	globalVM.Set("global", globalVM.NewObject())
+
 	return &Matcher{
-		mocks: sortedMocks,
+		mocks:       sortedMocks,
+		globalVM:    globalVM,
+		globalState: make(map[string]interface{}),
 	}
 }
 
@@ -170,6 +181,7 @@ func (m *Matcher) matchHeaders(requestHeaders http.Header, mockHeaders map[strin
 }
 
 // UpdateMocks updates the matcher with new mocks
+// Note: This preserves the global state across mock reloads
 func (m *Matcher) UpdateMocks(mocks []models.Mock) {
 	// Sort mocks by priority (higher priority first)
 	sortedMocks := make([]models.Mock, len(mocks))
@@ -179,6 +191,8 @@ func (m *Matcher) UpdateMocks(mocks []models.Mock) {
 	})
 
 	m.mocks = sortedMocks
+	// Note: We intentionally do NOT reset globalState here
+	// This allows state to persist across mock file reloads
 }
 
 // matchJSONPath matches request body against GJSON path matchers
@@ -216,7 +230,9 @@ func (m *Matcher) matchJSONPath(body string, matchers []models.JSONPathMatcher) 
 // evaluateJavaScript evaluates JavaScript code to determine if request matches
 // Returns (matches bool, customResponse *models.Response)
 func (m *Matcher) evaluateJavaScript(r *http.Request, body string, script string) (bool, *models.Response) {
-	vm := goja.New()
+	// Lock for thread-safe access to global state
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
 
 	// Prepare the request object for JavaScript
 	headers := make(map[string]string)
@@ -233,14 +249,15 @@ func (m *Matcher) evaluateJavaScript(r *http.Request, body string, script string
 		"body":    body,
 	}
 
-	// Set the request object in the VM
-	err := vm.Set("request", requestObj)
+	// Set the request object in the global VM
+	err := m.globalVM.Set("request", requestObj)
 	if err != nil {
 		return false, nil
 	}
 
-	// Execute the JavaScript code
-	result, err := vm.RunString(script)
+	// Execute the JavaScript code in the global VM
+	// This allows the script to access and modify the persistent global object
+	result, err := m.globalVM.RunString(script)
 	if err != nil {
 		return false, nil
 	}

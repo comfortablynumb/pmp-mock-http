@@ -1,0 +1,383 @@
+mocks:
+  # Example 1: Simple in-memory database simulation
+  # Create a user and store in global state
+  - name: "Create User"
+    priority: 10
+    request:
+      uri: "/api/users"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+
+          // Initialize users array if it doesn't exist
+          if (!global.users) {
+            global.users = [];
+            global.nextUserId = 1;
+          }
+
+          // Create new user
+          var newUser = {
+            id: global.nextUserId++,
+            name: body.name,
+            email: body.email,
+            createdAt: new Date().toISOString()
+          };
+
+          // Add to global state
+          global.users.push(newUser);
+
+          return {
+            matches: true,
+            response: {
+              status_code: 201,
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify(newUser)
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "JavaScript should handle this"
+
+  # Get all users from global state
+  - name: "Get All Users"
+    priority: 10
+    request:
+      uri: "/api/users"
+      method: "GET"
+      javascript: |
+        (function() {
+          var users = global.users || [];
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify(users)
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "JavaScript should handle this"
+
+  # Get user by ID from global state
+  - name: "Get User by ID"
+    priority: 10
+    request:
+      uri: "^/api/users/(\\d+)$"
+      method: "GET"
+      regex:
+        uri: true
+      javascript: |
+        (function() {
+          // Extract user ID from URI
+          var match = request.uri.match(/\/api\/users\/(\d+)$/);
+          if (!match) {
+            return {matches: false, response: null};
+          }
+
+          var userId = parseInt(match[1]);
+          var users = global.users || [];
+          var user = users.find(function(u) { return u.id === userId; });
+
+          if (!user) {
+            return {
+              matches: true,
+              response: {
+                status_code: 404,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({error: "User not found"})
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify(user)
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "JavaScript should handle this"
+
+  # Update user in global state
+  - name: "Update User"
+    priority: 10
+    request:
+      uri: "^/api/users/(\\d+)$"
+      method: "PUT"
+      regex:
+        uri: true
+      javascript: |
+        (function() {
+          var match = request.uri.match(/\/api\/users\/(\d+)$/);
+          if (!match) {
+            return {matches: false, response: null};
+          }
+
+          var userId = parseInt(match[1]);
+          var body = JSON.parse(request.body);
+          var users = global.users || [];
+
+          // Find user index
+          var index = -1;
+          for (var i = 0; i < users.length; i++) {
+            if (users[i].id === userId) {
+              index = i;
+              break;
+            }
+          }
+
+          if (index === -1) {
+            return {
+              matches: true,
+              response: {
+                status_code: 404,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({error: "User not found"})
+              }
+            };
+          }
+
+          // Update user
+          global.users[index] = {
+            id: userId,
+            name: body.name || global.users[index].name,
+            email: body.email || global.users[index].email,
+            createdAt: global.users[index].createdAt,
+            updatedAt: new Date().toISOString()
+          };
+
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify(global.users[index])
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "JavaScript should handle this"
+
+  # Delete user from global state
+  - name: "Delete User"
+    priority: 10
+    request:
+      uri: "^/api/users/(\\d+)$"
+      method: "DELETE"
+      regex:
+        uri: true
+      javascript: |
+        (function() {
+          var match = request.uri.match(/\/api\/users\/(\d+)$/);
+          if (!match) {
+            return {matches: false, response: null};
+          }
+
+          var userId = parseInt(match[1]);
+          var users = global.users || [];
+
+          // Find and remove user
+          var newUsers = [];
+          var found = false;
+          for (var i = 0; i < users.length; i++) {
+            if (users[i].id === userId) {
+              found = true;
+            } else {
+              newUsers.push(users[i]);
+            }
+          }
+
+          if (!found) {
+            return {
+              matches: true,
+              response: {
+                status_code: 404,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({error: "User not found"})
+              }
+            };
+          }
+
+          global.users = newUsers;
+
+          return {
+            matches: true,
+            response: {
+              status_code: 204,
+              headers: {}
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "JavaScript should handle this"
+
+  # Example 2: Session management
+  - name: "Login"
+    priority: 10
+    request:
+      uri: "/api/login"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+
+          // Initialize sessions if needed
+          if (!global.sessions) {
+            global.sessions = {};
+            global.sessionCounter = 0;
+          }
+
+          // Simple auth check (in real app, check against users)
+          if (body.username === "admin" && body.password === "secret") {
+            var sessionId = "sess_" + (global.sessionCounter++);
+            global.sessions[sessionId] = {
+              username: body.username,
+              createdAt: new Date().toISOString()
+            };
+
+            return {
+              matches: true,
+              response: {
+                status_code: 200,
+                headers: {
+                  "Content-Type": "application/json",
+                  "Set-Cookie": "sessionId=" + sessionId
+                },
+                body: JSON.stringify({
+                  message: "Login successful",
+                  sessionId: sessionId
+                })
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 401,
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({error: "Invalid credentials"})
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "JavaScript should handle this"
+
+  - name: "Get Profile (requires session)"
+    priority: 10
+    request:
+      uri: "/api/profile"
+      method: "GET"
+      javascript: |
+        (function() {
+          // Extract session ID from cookie header
+          var cookieHeader = request.headers["Cookie"] || "";
+          var sessionMatch = cookieHeader.match(/sessionId=([^;]+)/);
+
+          if (!sessionMatch) {
+            return {
+              matches: true,
+              response: {
+                status_code: 401,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({error: "Not authenticated"})
+              }
+            };
+          }
+
+          var sessionId = sessionMatch[1];
+          var sessions = global.sessions || {};
+          var session = sessions[sessionId];
+
+          if (!session) {
+            return {
+              matches: true,
+              response: {
+                status_code: 401,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({error: "Invalid session"})
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({
+                username: session.username,
+                sessionCreated: session.createdAt
+              })
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "JavaScript should handle this"
+
+  # Example 3: Request counter / rate limiting
+  - name: "API with Rate Limiting"
+    priority: 10
+    request:
+      uri: "/api/limited"
+      method: "GET"
+      javascript: |
+        (function() {
+          // Initialize counter
+          if (!global.requestCounts) {
+            global.requestCounts = {};
+          }
+
+          var clientIp = request.headers["X-Forwarded-For"] || "default";
+          global.requestCounts[clientIp] = (global.requestCounts[clientIp] || 0) + 1;
+
+          var count = global.requestCounts[clientIp];
+
+          // Rate limit: max 10 requests
+          if (count > 10) {
+            return {
+              matches: true,
+              response: {
+                status_code: 429,
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-RateLimit-Remaining": "0"
+                },
+                body: JSON.stringify({
+                  error: "Too many requests",
+                  retryAfter: 60
+                })
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {
+                "Content-Type": "application/json",
+                "X-RateLimit-Remaining": String(10 - count)
+              },
+              body: JSON.stringify({
+                message: "Success",
+                requestNumber: count
+              })
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "JavaScript should handle this"

@@ -413,6 +413,202 @@ mocks:
 
 **Note**: When a mock has a `javascript` field, other matching criteria (uri, method, headers, body, json_path) are ignored. The JavaScript code has full control over matching.
 
+### Global State (Stateful Mocks)
+
+JavaScript mocks have access to a persistent `global` object that maintains state across requests. This enables creating stateful API simulations like in-memory databases, session management, and rate limiting.
+
+#### Basic Example: In-Memory User Database
+
+```yaml
+mocks:
+  # Create user - stores in global state
+  - name: "Create User"
+    request:
+      uri: "/api/users"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+
+          // Initialize global state
+          if (!global.users) {
+            global.users = [];
+            global.nextUserId = 1;
+          }
+
+          // Create and store user
+          var newUser = {
+            id: global.nextUserId++,
+            name: body.name,
+            email: body.email
+          };
+          global.users.push(newUser);
+
+          return {
+            matches: true,
+            response: {
+              status_code: 201,
+              body: JSON.stringify(newUser)
+            }
+          };
+        })()
+    response:
+      status_code: 500
+
+  # Get all users - retrieves from global state
+  - name: "Get Users"
+    request:
+      uri: "/api/users"
+      method: "GET"
+      javascript: |
+        (function() {
+          var users = global.users || [];
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              body: JSON.stringify(users)
+            }
+          };
+        })()
+    response:
+      status_code: 500
+```
+
+**Usage:**
+1. POST to `/api/users` with `{"name": "John", "email": "john@example.com"}`
+2. GET `/api/users` returns the array of created users
+3. State persists across requests until the server is restarted
+
+#### Session Management Example
+
+```yaml
+mocks:
+  - name: "Login"
+    request:
+      uri: "/api/login"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+
+          if (!global.sessions) {
+            global.sessions = {};
+            global.sessionCounter = 0;
+          }
+
+          // Simple auth check
+          if (body.username === "admin" && body.password === "secret") {
+            var sessionId = "sess_" + (global.sessionCounter++);
+            global.sessions[sessionId] = {
+              username: body.username,
+              createdAt: new Date().toISOString()
+            };
+
+            return {
+              matches: true,
+              response: {
+                status_code: 200,
+                headers: {"Set-Cookie": "sessionId=" + sessionId},
+                body: JSON.stringify({sessionId: sessionId})
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 401,
+              body: JSON.stringify({error: "Invalid credentials"})
+            }
+          };
+        })()
+    response:
+      status_code: 500
+
+  - name: "Protected Resource"
+    request:
+      uri: "/api/profile"
+      method: "GET"
+      javascript: |
+        (function() {
+          var cookie = request.headers["Cookie"] || "";
+          var match = cookie.match(/sessionId=([^;]+)/);
+
+          if (!match || !global.sessions || !global.sessions[match[1]]) {
+            return {
+              matches: true,
+              response: {
+                status_code: 401,
+                body: JSON.stringify({error: "Not authenticated"})
+              }
+            };
+          }
+
+          var session = global.sessions[match[1]];
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              body: JSON.stringify({username: session.username})
+            }
+          };
+        })()
+    response:
+      status_code: 500
+```
+
+#### Rate Limiting Example
+
+```yaml
+mocks:
+  - name: "Rate Limited API"
+    request:
+      uri: "/api/limited"
+      method: "GET"
+      javascript: |
+        (function() {
+          if (!global.requestCounts) {
+            global.requestCounts = {};
+          }
+
+          var clientIp = request.headers["X-Forwarded-For"] || "default";
+          global.requestCounts[clientIp] = (global.requestCounts[clientIp] || 0) + 1;
+
+          if (global.requestCounts[clientIp] > 10) {
+            return {
+              matches: true,
+              response: {
+                status_code: 429,
+                headers: {"X-RateLimit-Remaining": "0"},
+                body: JSON.stringify({error: "Too many requests"})
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {"X-RateLimit-Remaining": String(10 - global.requestCounts[clientIp])},
+              body: JSON.stringify({message: "Success"})
+            }
+          };
+        })()
+    response:
+      status_code: 500
+```
+
+**Important Notes:**
+- Global state persists across all JavaScript-enabled mocks
+- State is thread-safe for concurrent requests
+- State survives mock file reloads (hot-reload preserves state)
+- State is cleared when the server restarts
+- Use `global.propertyName` to store and access data
+- Complex data structures (arrays, objects) are fully supported
+
+See `mocks/stateful-examples.yaml` for complete CRUD and session examples.
+
 ### Priority System
 
 When multiple mocks could match a request, the mock with the **highest priority** is chosen first. This allows you to create:
@@ -525,6 +721,7 @@ The `mocks/` directory contains several example files demonstrating various feat
 - `regex-examples.yaml`: Advanced regex matching patterns
 - `jsonpath-examples.yaml`: GJSON path matching examples
 - `javascript-examples.yaml`: JavaScript evaluation examples
+- `stateful-examples.yaml`: Global state and stateful API simulations (CRUD, sessions, rate limiting)
 - `apis/external-service.yaml`: Examples in a subdirectory
 
 ## Development
