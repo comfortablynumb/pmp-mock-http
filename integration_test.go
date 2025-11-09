@@ -73,7 +73,7 @@ func TestIntegrationFullWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to make request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // test cleanup
 
 	if resp.StatusCode != 200 {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
