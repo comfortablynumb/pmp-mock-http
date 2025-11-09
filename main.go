@@ -5,16 +5,20 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/comfortablynumb/pmp-mock-http/internal/loader"
+	"github.com/comfortablynumb/pmp-mock-http/internal/plugins"
 	"github.com/comfortablynumb/pmp-mock-http/internal/server"
 	"github.com/comfortablynumb/pmp-mock-http/internal/watcher"
 )
 
 var (
-	port      = flag.Int("port", 8083, "HTTP server port")
-	mocksDir  = flag.String("mocks-dir", "mocks", "Directory containing mock YAML files")
+	port       = flag.Int("port", 8083, "HTTP server port")
+	mocksDir   = flag.String("mocks-dir", "mocks", "Directory containing mock YAML files")
+	pluginsDir = flag.String("plugins-dir", "plugins", "Directory to store plugin repositories")
+	pluginList = flag.String("plugins", "", "Comma-separated list of git repository URLs to clone as plugins")
 )
 
 func main() {
@@ -24,8 +28,33 @@ func main() {
 	log.Printf("Port: %d\n", *port)
 	log.Printf("Mocks directory: %s\n", *mocksDir)
 
-	// Create the loader
-	mockLoader := loader.NewLoader(*mocksDir)
+	// Parse plugin repositories
+	var pluginRepos []string
+	if *pluginList != "" {
+		pluginRepos = strings.Split(*pluginList, ",")
+		for i := range pluginRepos {
+			pluginRepos[i] = strings.TrimSpace(pluginRepos[i])
+		}
+		log.Printf("Plugins: %d repositories configured\n", len(pluginRepos))
+	}
+
+	// Set up plugins (clone/update repositories)
+	var pluginDirs []string
+	if len(pluginRepos) > 0 {
+		pluginManager := plugins.NewManager(*pluginsDir, pluginRepos)
+		var err error
+		pluginDirs, err = pluginManager.SetupPlugins()
+		if err != nil {
+			log.Printf("Warning: failed to setup plugins: %v\n", err)
+		}
+		log.Printf("Loaded %d plugin(s)\n", len(pluginDirs))
+	}
+
+	// Create directories to load (mocks dir + plugin dirs)
+	loadDirs := append([]string{*mocksDir}, pluginDirs...)
+
+	// Create the loader with all directories
+	mockLoader := loader.NewLoader(loadDirs...)
 
 	// Load initial mocks
 	if err := mockLoader.LoadAll(); err != nil {
@@ -44,16 +73,24 @@ func main() {
 		return nil
 	}
 
-	// Create and start the file watcher
-	w, err := watcher.NewWatcher(*mocksDir, reloadFn)
-	if err != nil {
-		log.Fatalf("Failed to create watcher: %v\n", err)
-	}
-	defer w.Close() //nolint:errcheck // cleanup operation
+	// Create and start file watchers for all directories
+	var watchers []*watcher.Watcher
+	for _, dir := range loadDirs {
+		w, err := watcher.NewWatcher(dir, reloadFn)
+		if err != nil {
+			log.Printf("Warning: failed to create watcher for %s: %v\n", dir, err)
+			continue
+		}
+		defer w.Close() //nolint:errcheck // cleanup operation
 
-	if err := w.Start(); err != nil {
-		log.Fatalf("Failed to start watcher: %v\n", err)
+		if err := w.Start(); err != nil {
+			log.Printf("Warning: failed to start watcher for %s: %v\n", dir, err)
+			continue
+		}
+		watchers = append(watchers, w)
 	}
+
+	log.Printf("Watching %d directory(ies) for changes\n", len(watchers))
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)

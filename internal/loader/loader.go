@@ -13,20 +13,20 @@ import (
 
 // Loader manages loading mock specifications from YAML files
 type Loader struct {
-	mocksDir string
-	mocks    []models.Mock
-	mu       sync.RWMutex
+	mocksDirs []string
+	mocks     []models.Mock
+	mu        sync.RWMutex
 }
 
-// NewLoader creates a new mock loader
-func NewLoader(mocksDir string) *Loader {
+// NewLoader creates a new mock loader with one or more directories
+func NewLoader(mocksDirs ...string) *Loader {
 	return &Loader{
-		mocksDir: mocksDir,
-		mocks:    make([]models.Mock, 0),
+		mocksDirs: mocksDirs,
+		mocks:     make([]models.Mock, 0),
 	}
 }
 
-// LoadAll loads all mock files from the mocks directory and subdirectories
+// LoadAll loads all mock files from all configured directories and subdirectories
 func (l *Loader) LoadAll() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -34,41 +34,43 @@ func (l *Loader) LoadAll() error {
 	// Clear existing mocks
 	l.mocks = make([]models.Mock, 0)
 
-	// Walk through the mocks directory
-	err := filepath.Walk(l.mocksDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			// If the directory doesn't exist, just return (it will be created later)
-			if os.IsNotExist(err) {
+	// Walk through each configured directory
+	for _, mocksDir := range l.mocksDirs {
+		err := filepath.Walk(mocksDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				// If the directory doesn't exist, just return (it will be created later)
+				if os.IsNotExist(err) {
+					return nil
+				}
+				return err
+			}
+
+			// Skip directories
+			if info.IsDir() {
 				return nil
 			}
-			return err
-		}
 
-		// Skip directories
-		if info.IsDir() {
+			// Only process YAML files
+			if !isYAMLFile(path) {
+				return nil
+			}
+
+			// Load the mock file
+			if err := l.loadFile(path); err != nil {
+				fmt.Printf("Warning: failed to load mock file %s: %v\n", path, err)
+				// Continue processing other files even if one fails
+				return nil
+			}
+
 			return nil
+		})
+
+		if err != nil {
+			return fmt.Errorf("failed to walk mocks directory %s: %w", mocksDir, err)
 		}
-
-		// Only process YAML files
-		if !isYAMLFile(path) {
-			return nil
-		}
-
-		// Load the mock file
-		if err := l.loadFile(path); err != nil {
-			fmt.Printf("Warning: failed to load mock file %s: %v\n", path, err)
-			// Continue processing other files even if one fails
-			return nil
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to walk mocks directory: %w", err)
 	}
 
-	fmt.Printf("Loaded %d mock(s) from %s\n", len(l.mocks), l.mocksDir)
+	fmt.Printf("Loaded %d total mock(s) from %d directory(ies)\n", len(l.mocks), len(l.mocksDirs))
 	return nil
 }
 

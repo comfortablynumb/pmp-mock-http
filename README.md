@@ -10,10 +10,12 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 - ✅ **YAML Configuration**: Define mocks in simple YAML files
 - ✅ **Hot Reloading**: Automatically reload mocks when files change
 - ✅ **Recursive Loading**: Load mock files from nested subdirectories
+- ✅ **Plugin System**: Load mocks from external git repositories
 - ✅ **Advanced Matching**: Match requests by URI, HTTP Method, Headers, and Body
 - ✅ **Regex Support**: Use regular expressions for flexible matching on any field
 - ✅ **JSON Path Matching**: Use GJSON paths to match specific JSON fields in request bodies
 - ✅ **JavaScript Evaluation**: Write custom JavaScript logic for complex matching and dynamic responses
+- ✅ **Global State**: Persistent JavaScript state for stateful mock APIs (CRUD, sessions, rate limiting)
 - ✅ **Priority System**: Control which mocks match first
 - ✅ **Response Control**: Configure status codes, headers, body, and delays
 
@@ -69,6 +71,78 @@ docker run -p 8083:8083 -v /path/to/your/mocks:/custom/mocks pmp-mock-http --moc
 |------|---------|-------------|
 | `-port` | 8083 | HTTP server port |
 | `-mocks-dir` | mocks | Directory containing mock YAML files |
+| `-plugins-dir` | plugins | Directory to store plugin repositories |
+| `-plugins` | "" | Comma-separated list of git repository URLs to clone as plugins |
+
+### Plugins System
+
+The plugin system allows you to load mock configurations from external git repositories. This is useful for:
+
+- **Sharing mock configurations** across multiple projects
+- **Versioning mock libraries** in separate repositories
+- **Organizing mocks** by service or domain
+- **Collaborating** on mock definitions with teams
+
+#### Basic Plugin Usage
+
+```bash
+# Load mocks from a single plugin repository
+./pmp-mock-http --plugins "https://github.com/user/api-mocks.git"
+
+# Load mocks from multiple plugin repositories
+./pmp-mock-http --plugins "https://github.com/user/api-mocks.git,https://github.com/org/service-mocks.git"
+
+# Specify custom plugins directory
+./pmp-mock-http --plugins-dir /tmp/plugins --plugins "https://github.com/user/mocks.git"
+```
+
+#### How Plugins Work
+
+1. **Clone/Update**: On startup, the server clones each plugin repository to the plugins directory
+2. **Auto-Update**: If a plugin already exists, it's updated with `git pull`
+3. **Load Mocks**: All YAML files in the plugin repositories are loaded as mocks
+4. **Hot-Reload**: Plugin directories are watched for changes, just like the main mocks directory
+5. **Priority**: Mocks from plugins are merged with local mocks, with priority determining match order
+
+#### Plugin Structure
+
+Each plugin repository should contain YAML mock files in any structure:
+
+```
+my-api-mocks/
+├── users.yaml           # User API mocks
+├── products.yaml        # Product API mocks
+└── apis/
+    └── external.yaml    # External service mocks
+```
+
+#### Docker with Plugins
+
+```bash
+# Run with plugins
+docker run -p 8083:8083 \
+  -v $(pwd)/mocks:/app/mocks \
+  pmp-mock-http \
+  --plugins "https://github.com/user/api-mocks.git"
+
+# With custom plugins directory
+docker run -p 8083:8083 \
+  -v $(pwd)/mocks:/app/mocks \
+  -v $(pwd)/plugins:/app/plugins \
+  pmp-mock-http \
+  --plugins-dir /app/plugins \
+  --plugins "https://github.com/user/mocks.git"
+```
+
+**Note**: The Docker image includes git, so plugin cloning works out of the box.
+
+#### Plugin Best Practices
+
+- **Organize by service**: Create separate plugin repositories for each external service
+- **Use semantic versioning**: Tag plugin releases for stable versions
+- **Document mock behavior**: Include README files in plugin repositories
+- **Test plugins independently**: Each plugin can have its own test suite
+- **Share via private repos**: Private git repositories work with SSH authentication
 
 ## Mock Configuration
 
