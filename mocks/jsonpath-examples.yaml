@@ -1,0 +1,109 @@
+mocks:
+  # Example 1: Match specific JSON field value
+  - name: "Create Admin User"
+    priority: 20
+    request:
+      uri: "/api/users"
+      method: "POST"
+      json_path:
+        - path: "user.role"
+          value: "admin"
+          regex: false
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "id": 1,
+          "message": "Admin user created successfully",
+          "permissions": ["read", "write", "delete"]
+        }
+
+  # Example 2: Match multiple JSON fields
+  - name: "Premium Subscription"
+    priority: 20
+    request:
+      uri: "/api/subscribe"
+      method: "POST"
+      json_path:
+        - path: "plan.type"
+          value: "premium"
+          regex: false
+        - path: "payment.method"
+          value: "credit_card"
+          regex: false
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "subscription_id": "sub_123",
+          "status": "active",
+          "features": ["unlimited_access", "priority_support", "custom_domain"]
+        }
+
+  # Example 3: Use regex in JSON path matching
+  - name: "Valid Email Format"
+    priority: 15
+    request:
+      uri: "/api/register"
+      method: "POST"
+      json_path:
+        - path: "email"
+          value: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+          regex: true
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "message": "Registration successful",
+          "verification_sent": true
+        }
+
+  # Example 4: Match nested JSON paths
+  - name: "Specific Product Category"
+    priority: 10
+    request:
+      uri: "/api/products"
+      method: "POST"
+      json_path:
+        - path: "product.category.name"
+          value: "Electronics"
+          regex: false
+        - path: "product.price"
+          value: "^[1-9]\\d{2,}$"
+          regex: true
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "id": "prod_456",
+          "category": "Electronics",
+          "message": "High-value electronics product created"
+        }
+
+  # Example 5: Match array element
+  - name: "User with Specific Skill"
+    priority: 10
+    request:
+      uri: "/api/candidates"
+      method: "POST"
+      json_path:
+        - path: "skills.0"
+          value: "golang"
+          regex: false
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "message": "Golang developer profile created",
+          "job_matches": ["senior-go-engineer", "backend-developer"]
+        }
