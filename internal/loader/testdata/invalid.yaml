@@ -1,0 +1,3 @@
+mocks:
+  - name: "Invalid"
+    invalid yaml structure [[[

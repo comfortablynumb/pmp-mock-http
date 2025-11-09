@@ -1,0 +1,7 @@
+mocks:
+  - name: "Mock with defaults"
+    request:
+      uri: "/api/defaults"
+      method: "GET"
+    response:
+      body: "defaults test"

@@ -1,0 +1,104 @@
+mocks:
+  # Regex URI matching - matches any user ID
+  - name: "Get Any User"
+    priority: 5  # Lower priority than exact match
+    request:
+      uri: "^/api/users/\\d+$"
+      method: "GET"
+      regex:
+        uri: true
+        method: false
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "id": 999,
+          "name": "Generic User",
+          "email": "user@example.com",
+          "note": "This matches any /api/users/{id} endpoint using regex"
+        }
+
+  # Regex matching for product endpoints
+  - name: "Get Product by SKU"
+    priority: 5
+    request:
+      uri: "^/api/products/[A-Z]{3}-\\d{4}$"
+      method: "GET"
+      regex:
+        uri: true
+        method: false
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "sku": "ABC-1234",
+          "name": "Sample Product",
+          "price": 99.99
+        }
+
+  # Regex header matching - match requests with specific authorization pattern
+  - name: "Authorized API Call"
+    priority: 8
+    request:
+      uri: "/api/protected"
+      method: "GET"
+      headers:
+        Authorization: "^Bearer [A-Za-z0-9\\-._~+/]+=*$"
+      regex:
+        uri: false
+        method: false
+        headers: true
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "message": "Access granted",
+          "data": "Secret information"
+        }
+
+  # Regex body matching - match JSON with specific pattern
+  - name: "Create Order with Email"
+    priority: 8
+    request:
+      uri: "/api/orders"
+      method: "POST"
+      body: ".*\"email\"\\s*:\\s*\"[^\"]+@[^\"]+\\.[^\"]+\".*"
+      regex:
+        uri: false
+        method: false
+        body: true
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "order_id": "ORD-12345",
+          "status": "confirmed",
+          "message": "Order created successfully"
+        }
+
+  # Catch-all for any unmatched GET requests
+  - name: "Fallback GET"
+    priority: 1
+    request:
+      uri: ".*"
+      method: "GET"
+      regex:
+        uri: true
+        method: false
+    response:
+      status_code: 404
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "error": "Not Found",
+          "message": "The requested resource was not found"
+        }

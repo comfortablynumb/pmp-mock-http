@@ -1,0 +1,70 @@
+mocks:
+  # Simulate external weather API
+  - name: "Weather API - Get Current Weather"
+    priority: 10
+    request:
+      uri: "/weather/current"
+      method: "GET"
+      regex:
+        uri: false
+        method: false
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+        X-Rate-Limit: "100"
+      body: |
+        {
+          "location": "San Francisco",
+          "temperature": 72,
+          "conditions": "Sunny",
+          "humidity": 65,
+          "wind_speed": 10
+        }
+
+  # Simulate payment gateway
+  - name: "Payment Gateway - Process Payment"
+    priority: 10
+    request:
+      uri: "/payments/process"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+      regex:
+        uri: false
+        method: false
+        headers: false
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "transaction_id": "TXN-7890-ABCD",
+          "status": "approved",
+          "amount": 150.00,
+          "currency": "USD",
+          "timestamp": "2024-01-15T10:30:00Z"
+        }
+      delay: 500
+
+  # Error response example
+  - name: "Payment Gateway - Insufficient Funds"
+    priority: 15
+    request:
+      uri: "/payments/process"
+      method: "POST"
+      body: ".*\"amount\"\\s*:\\s*([5-9]\\d{3,}|\\d{5,}).*"
+      regex:
+        uri: false
+        method: false
+        body: true
+    response:
+      status_code: 402
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "error": "insufficient_funds",
+          "message": "The payment amount exceeds available balance"
+        }

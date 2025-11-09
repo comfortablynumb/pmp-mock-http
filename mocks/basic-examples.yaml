@@ -1,0 +1,71 @@
+mocks:
+  # Simple GET request with exact URI match
+  - name: "Get User by ID"
+    priority: 10
+    request:
+      uri: "/api/users/123"
+      method: "GET"
+      regex:
+        uri: false
+        method: false
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "id": 123,
+          "name": "John Doe",
+          "email": "john@example.com"
+        }
+
+  # POST request with body matching
+  - name: "Create User"
+    priority: 10
+    request:
+      uri: "/api/users"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+      regex:
+        uri: false
+        method: false
+        headers: false
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+        Location: "/api/users/124"
+      body: |
+        {
+          "id": 124,
+          "message": "User created successfully"
+        }
+
+  # DELETE request
+  - name: "Delete User"
+    priority: 10
+    request:
+      uri: "/api/users/123"
+      method: "DELETE"
+      regex:
+        uri: false
+        method: false
+    response:
+      status_code: 204
+
+  # Request with delay to simulate slow API
+  - name: "Slow API Response"
+    priority: 10
+    request:
+      uri: "/api/slow"
+      method: "GET"
+      regex:
+        uri: false
+        method: false
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "text/plain"
+      body: "This response was delayed by 2 seconds"
+      delay: 2000

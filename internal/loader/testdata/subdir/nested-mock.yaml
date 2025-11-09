@@ -1,0 +1,9 @@
+mocks:
+  - name: "Nested Mock"
+    priority: 15
+    request:
+      uri: "/api/nested"
+      method: "GET"
+    response:
+      status_code: 200
+      body: "nested response"

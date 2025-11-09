@@ -1,0 +1,23 @@
+mocks:
+  - name: "Test Mock 1"
+    priority: 10
+    request:
+      uri: "/api/test1"
+      method: "GET"
+      regex:
+        uri: false
+        method: false
+    response:
+      status_code: 200
+      body: "test response 1"
+  - name: "Test Mock 2"
+    priority: 5
+    request:
+      uri: "/api/test2"
+      method: "POST"
+      regex:
+        uri: false
+        method: false
+    response:
+      status_code: 201
+      body: "test response 2"
