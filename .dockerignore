@@ -1,0 +1,36 @@
+# Binaries
+pmp-mock-http
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage tool
+*.out
+coverage.*
+
+# Git
+.git
+.gitignore
+
+# CI/CD
+.github
+
+# Documentation
+README.md
+LICENSE
+
+# IDE
+.vscode
+.idea
+
+# Test data
+internal/*/testdata
+
+# Go workspace
+go.work
+go.work.sum

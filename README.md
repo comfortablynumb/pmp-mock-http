@@ -25,6 +25,24 @@ cd pmp-mock-http
 go build -o pmp-mock-http
 ```
 
+### Docker
+
+```bash
+# Build the Docker image
+docker build -t pmp-mock-http .
+
+# Run with default settings (port 8083, mocks from /app/mocks)
+docker run -p 8083:8083 -v $(pwd)/mocks:/app/mocks pmp-mock-http
+
+# Run with custom port
+docker run -p 9000:9000 -v $(pwd)/mocks:/app/mocks pmp-mock-http --port 9000
+
+# Run with custom mocks directory
+docker run -p 8083:8083 -v /path/to/your/mocks:/custom/mocks pmp-mock-http --mocks-dir /custom/mocks
+```
+
+**Note:** The Docker image includes `git` for any git-based operations you might need.
+
 ## Usage
 
 ### Basic Usage
