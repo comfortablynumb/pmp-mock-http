@@ -402,3 +402,196 @@ func TestServerConcurrentRequests(t *testing.T) {
 		<-done
 	}
 }
+
+func TestServerLargeRequestBody(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "Large Body Mock",
+			Request: models.Request{
+				URI:    "/api/upload",
+				Method: "POST",
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       "received",
+			},
+		},
+	}
+
+	srv := NewServer(8080, mocks)
+
+	// Create a large body (1MB)
+	largeBody := bytes.Repeat([]byte("a"), 1024*1024)
+	req := httptest.NewRequest("POST", "/api/upload", bytes.NewReader(largeBody))
+	w := httptest.NewRecorder()
+
+	srv.handleRequest(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != 200 {
+		t.Errorf("Expected status 200 for large body, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerVariousStatusCodes(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+	}{
+		{"OK", 200},
+		{"Created", 201},
+		{"Accepted", 202},
+		{"No Content", 204},
+		{"Bad Request", 400},
+		{"Unauthorized", 401},
+		{"Forbidden", 403},
+		{"Not Found", 404},
+		{"Internal Server Error", 500},
+		{"Service Unavailable", 503},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mocks := []models.Mock{
+				{
+					Name: tt.name,
+					Request: models.Request{
+						URI:    "/api/test",
+						Method: "GET",
+					},
+					Response: models.Response{
+						StatusCode: tt.statusCode,
+						Body:       tt.name,
+					},
+				},
+			}
+
+			srv := NewServer(8080, mocks)
+
+			req := httptest.NewRequest("GET", "/api/test", nil)
+			w := httptest.NewRecorder()
+
+			srv.handleRequest(w, req)
+
+			resp := w.Result()
+			if resp.StatusCode != tt.statusCode {
+				t.Errorf("Expected status %d, got %d", tt.statusCode, resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestServerConcurrentUpdates(t *testing.T) {
+	initialMocks := []models.Mock{
+		{
+			Name: "Initial",
+			Request: models.Request{
+				URI:    "/api/test",
+				Method: "GET",
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       "initial",
+			},
+		},
+	}
+
+	srv := NewServer(8080, initialMocks)
+
+	// Concurrently update mocks and make requests
+	done := make(chan bool, 20)
+
+	// Start requests
+	for i := 0; i < 10; i++ {
+		go func() {
+			req := httptest.NewRequest("GET", "/api/test", nil)
+			w := httptest.NewRecorder()
+			srv.handleRequest(w, req)
+			done <- true
+		}()
+	}
+
+	// Concurrent updates
+	for i := 0; i < 10; i++ {
+		go func() {
+			newMocks := []models.Mock{
+				{
+					Name: "Updated",
+					Request: models.Request{
+						URI:    "/api/test",
+						Method: "GET",
+					},
+					Response: models.Response{
+						StatusCode: 200,
+						Body:       "updated",
+					},
+				},
+			}
+			srv.UpdateMocks(newMocks)
+			done <- true
+		}()
+	}
+
+	// Wait for all operations
+	for i := 0; i < 20; i++ {
+		<-done
+	}
+}
+
+func TestServerQueryParameters(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "With Query Params",
+			Request: models.Request{
+				URI:    "/api/search",
+				Method: "GET",
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       "search results",
+			},
+		},
+	}
+
+	srv := NewServer(8080, mocks)
+
+	// Request with query parameters
+	req := httptest.NewRequest("GET", "/api/search?q=test&limit=10", nil)
+	w := httptest.NewRecorder()
+
+	srv.handleRequest(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != 200 {
+		t.Errorf("Expected status 200 with query params, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerSpecialCharactersInBody(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "Special Chars Mock",
+			Request: models.Request{
+				URI:    "/api/test",
+				Method: "POST",
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       `{"message": "success"}`,
+			},
+		},
+	}
+
+	srv := NewServer(8080, mocks)
+
+	body := bytes.NewBufferString(`{"test": "special chars"}`)
+	req := httptest.NewRequest("POST", "/api/test", body)
+	w := httptest.NewRecorder()
+
+	srv.handleRequest(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != 200 {
+		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	}
+}
