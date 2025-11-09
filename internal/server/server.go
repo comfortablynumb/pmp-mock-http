@@ -56,9 +56,14 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Restore the body for the matcher to read
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-	// Log request details
+	// Log request details (limit body size to avoid hanging on large payloads)
 	if len(bodyBytes) > 0 {
-		log.Printf("Request body: %s\n", string(bodyBytes))
+		const maxLogSize = 1024 // Log up to 1KB of body
+		if len(bodyBytes) <= maxLogSize {
+			log.Printf("Request body: %s\n", string(bodyBytes))
+		} else {
+			log.Printf("Request body: %s... (%d bytes total)\n", string(bodyBytes[:maxLogSize]), len(bodyBytes))
+		}
 	}
 
 	// Find a matching mock
