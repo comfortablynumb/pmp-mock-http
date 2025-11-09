@@ -1,0 +1,220 @@
+mocks:
+  # Example 1: Simple conditional matching
+  - name: "Admin Access Only"
+    priority: 30
+    request:
+      uri: "/api/admin"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+          return {
+            matches: body.user && body.user.role === "admin",
+            response: null
+          };
+        })()
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "message": "Welcome, administrator",
+          "permissions": ["all"]
+        }
+
+  # Example 2: Custom response based on request data
+  - name: "Dynamic Pricing Response"
+    priority: 25
+    request:
+      uri: "/api/pricing"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+          var isPremium = body.tier === "premium";
+          var discount = isPremium ? 20 : 0;
+
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {
+                "Content-Type": "application/json",
+                "X-Discount-Applied": discount.toString()
+              },
+              body: JSON.stringify({
+                tier: body.tier,
+                price: isPremium ? 79.99 : 99.99,
+                discount_percent: discount,
+                message: isPremium ? "Premium discount applied!" : "Standard pricing"
+              })
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "This should not be returned"
+
+  # Example 3: Complex validation logic
+  - name: "Order Validation"
+    priority: 20
+    request:
+      uri: "/api/orders"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+
+          // Check if order is valid
+          var hasItems = body.items && body.items.length > 0;
+          var hasValidTotal = body.total && body.total > 0;
+          var hasShippingInfo = body.shipping && body.shipping.address;
+
+          var isValid = hasItems && hasValidTotal && hasShippingInfo;
+
+          if (!isValid) {
+            return {
+              matches: true,
+              response: {
+                status_code: 400,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                  error: "Invalid order",
+                  missing: [
+                    !hasItems ? "items" : null,
+                    !hasValidTotal ? "total" : null,
+                    !hasShippingInfo ? "shipping_address" : null
+                  ].filter(function(x) { return x !== null; })
+                })
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 201,
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({
+                order_id: "ord_" + Math.floor(Math.random() * 10000),
+                status: "confirmed",
+                message: "Order placed successfully"
+              })
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "Default response"
+
+  # Example 4: Check headers and URI together
+  - name: "API Key Authentication"
+    priority: 25
+    request:
+      javascript: |
+        (function() {
+          var hasValidKey = request.headers["X-API-Key"] === "secret-key-123";
+          var isProtectedEndpoint = request.uri.indexOf("/api/protected") === 0;
+
+          if (isProtectedEndpoint && !hasValidKey) {
+            return {
+              matches: true,
+              response: {
+                status_code: 401,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                  error: "Unauthorized",
+                  message: "Valid API key required"
+                })
+              }
+            };
+          }
+
+          if (isProtectedEndpoint && hasValidKey) {
+            return {
+              matches: true,
+              response: {
+                status_code: 200,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                  message: "Access granted",
+                  data: "Protected resource content"
+                })
+              }
+            };
+          }
+
+          return { matches: false, response: null };
+        })()
+    response:
+      status_code: 500
+      body: "Should not reach here"
+
+  # Example 5: Time-based responses
+  - name: "Business Hours Check"
+    priority: 15
+    request:
+      uri: "/api/support"
+      method: "POST"
+      javascript: |
+        (function() {
+          var now = new Date();
+          var hour = now.getHours();
+          var isBusinessHours = hour >= 9 && hour < 17;
+
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({
+                available: isBusinessHours,
+                message: isBusinessHours
+                  ? "Support team is available now"
+                  : "Support team is offline. Business hours: 9 AM - 5 PM",
+                current_hour: hour
+              })
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "Default"
+
+  # Example 6: Request method and content type validation
+  - name: "JSON POST Only"
+    priority: 20
+    request:
+      uri: "/api/data"
+      javascript: |
+        (function() {
+          var isPost = request.method === "POST";
+          var isJson = request.headers["Content-Type"] === "application/json";
+
+          if (!isPost || !isJson) {
+            return {
+              matches: true,
+              response: {
+                status_code: 415,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                  error: "Unsupported Media Type",
+                  required: "POST with Content-Type: application/json"
+                })
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({ message: "Data received successfully" })
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "Fallback"

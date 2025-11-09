@@ -12,6 +12,8 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 - ✅ **Recursive Loading**: Load mock files from nested subdirectories
 - ✅ **Advanced Matching**: Match requests by URI, HTTP Method, Headers, and Body
 - ✅ **Regex Support**: Use regular expressions for flexible matching on any field
+- ✅ **JSON Path Matching**: Use GJSON paths to match specific JSON fields in request bodies
+- ✅ **JavaScript Evaluation**: Write custom JavaScript logic for complex matching and dynamic responses
 - ✅ **Priority System**: Control which mocks match first
 - ✅ **Response Control**: Configure status codes, headers, body, and delays
 
@@ -176,6 +178,437 @@ mocks:
       body: '{"id": 124, "message": "User created"}'
 ```
 
+### JSON Path Matching (GJSON)
+
+Match specific fields in JSON request bodies using [GJSON path syntax](https://github.com/tidwall/gjson#path-syntax). This provides a more precise and readable way to match JSON data compared to regex.
+
+#### Basic JSON Path Example
+
+```yaml
+mocks:
+  - name: "Create Admin User"
+    request:
+      uri: "/api/users"
+      method: "POST"
+      json_path:
+        - path: "user.role"
+          value: "admin"
+          regex: false
+    response:
+      status_code: 201
+      body: '{"message": "Admin user created"}'
+```
+
+This matches requests like:
+```json
+{
+  "user": {
+    "role": "admin",
+    "name": "John"
+  }
+}
+```
+
+#### Multiple JSON Path Matchers
+
+You can specify multiple path matchers - all must match for the request to match:
+
+```yaml
+mocks:
+  - name: "Premium Subscription"
+    request:
+      uri: "/api/subscribe"
+      method: "POST"
+      json_path:
+        - path: "plan.type"
+          value: "premium"
+          regex: false
+        - path: "payment.method"
+          value: "credit_card"
+          regex: false
+    response:
+      status_code: 200
+      body: '{"subscription_id": "sub_123", "status": "active"}'
+```
+
+#### JSON Path with Regex
+
+Combine GJSON paths with regex patterns:
+
+```yaml
+mocks:
+  - name: "Valid Email Format"
+    request:
+      uri: "/api/register"
+      method: "POST"
+      json_path:
+        - path: "email"
+          value: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+          regex: true
+    response:
+      status_code: 200
+      body: '{"message": "Registration successful"}'
+```
+
+#### Advanced GJSON Features
+
+GJSON supports powerful path syntax including:
+
+- **Nested paths**: `user.profile.email`
+- **Array access**: `items.0.name` (first item's name)
+- **Array queries**: `items.#(price>100).name` (names of items over $100)
+- **Wildcards**: `users.*.email` (all user emails)
+
+See the [GJSON documentation](https://github.com/tidwall/gjson#path-syntax) for complete path syntax.
+
+### JavaScript Evaluation
+
+For complex matching logic or dynamic responses, use JavaScript code to evaluate requests. The JavaScript code receives a `request` object and must return an object with `matches` (boolean) and optionally a custom `response`.
+
+#### Request Object
+
+The JavaScript code has access to a `request` object with:
+
+```javascript
+{
+  uri: "/api/endpoint",        // Request URI path
+  method: "POST",              // HTTP method
+  headers: {                   // Request headers
+    "Content-Type": "application/json",
+    "X-API-Key": "secret"
+  },
+  body: "{\"user\": \"data\"}"  // Request body as string
+}
+```
+
+#### Simple Matching Example
+
+```yaml
+mocks:
+  - name: "Admin Access Only"
+    request:
+      uri: "/api/admin"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+          return {
+            matches: body.user && body.user.role === "admin",
+            response: null
+          };
+        })()
+    response:
+      status_code: 200
+      body: '{"message": "Welcome, administrator"}'
+```
+
+#### Dynamic Response Example
+
+Return a custom response based on request data:
+
+```yaml
+mocks:
+  - name: "Dynamic Pricing"
+    request:
+      uri: "/api/pricing"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+          var isPremium = body.tier === "premium";
+
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                tier: body.tier,
+                price: isPremium ? 79.99 : 99.99,
+                discount: isPremium ? 20 : 0
+              })
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "This fallback is not used when JS returns a custom response"
+```
+
+#### Complex Validation Example
+
+```yaml
+mocks:
+  - name: "Order Validation"
+    request:
+      uri: "/api/orders"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+          var hasItems = body.items && body.items.length > 0;
+          var hasValidTotal = body.total && body.total > 0;
+
+          if (!hasItems || !hasValidTotal) {
+            return {
+              matches: true,
+              response: {
+                status_code: 400,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                  error: "Invalid order",
+                  missing: !hasItems ? "items" : "total"
+                })
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 201,
+              body: JSON.stringify({
+                order_id: "ord_12345",
+                status: "confirmed"
+              })
+            }
+          };
+        })()
+    response:
+      status_code: 500
+      body: "Fallback"
+```
+
+#### Authentication Example
+
+Check headers and URI together:
+
+```yaml
+mocks:
+  - name: "API Key Auth"
+    request:
+      javascript: |
+        (function() {
+          var hasValidKey = request.headers["X-API-Key"] === "secret-key-123";
+          var isProtected = request.uri.indexOf("/api/protected") === 0;
+
+          if (isProtected && !hasValidKey) {
+            return {
+              matches: true,
+              response: {
+                status_code: 401,
+                body: JSON.stringify({error: "Unauthorized"})
+              }
+            };
+          }
+
+          return { matches: isProtected && hasValidKey, response: null };
+        })()
+    response:
+      status_code: 200
+      body: '{"message": "Access granted"}'
+```
+
+**Note**: When a mock has a `javascript` field, other matching criteria (uri, method, headers, body, json_path) are ignored. The JavaScript code has full control over matching.
+
+### Global State (Stateful Mocks)
+
+JavaScript mocks have access to a persistent `global` object that maintains state across requests. This enables creating stateful API simulations like in-memory databases, session management, and rate limiting.
+
+#### Basic Example: In-Memory User Database
+
+```yaml
+mocks:
+  # Create user - stores in global state
+  - name: "Create User"
+    request:
+      uri: "/api/users"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+
+          // Initialize global state
+          if (!global.users) {
+            global.users = [];
+            global.nextUserId = 1;
+          }
+
+          // Create and store user
+          var newUser = {
+            id: global.nextUserId++,
+            name: body.name,
+            email: body.email
+          };
+          global.users.push(newUser);
+
+          return {
+            matches: true,
+            response: {
+              status_code: 201,
+              body: JSON.stringify(newUser)
+            }
+          };
+        })()
+    response:
+      status_code: 500
+
+  # Get all users - retrieves from global state
+  - name: "Get Users"
+    request:
+      uri: "/api/users"
+      method: "GET"
+      javascript: |
+        (function() {
+          var users = global.users || [];
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              body: JSON.stringify(users)
+            }
+          };
+        })()
+    response:
+      status_code: 500
+```
+
+**Usage:**
+1. POST to `/api/users` with `{"name": "John", "email": "john@example.com"}`
+2. GET `/api/users` returns the array of created users
+3. State persists across requests until the server is restarted
+
+#### Session Management Example
+
+```yaml
+mocks:
+  - name: "Login"
+    request:
+      uri: "/api/login"
+      method: "POST"
+      javascript: |
+        (function() {
+          var body = JSON.parse(request.body);
+
+          if (!global.sessions) {
+            global.sessions = {};
+            global.sessionCounter = 0;
+          }
+
+          // Simple auth check
+          if (body.username === "admin" && body.password === "secret") {
+            var sessionId = "sess_" + (global.sessionCounter++);
+            global.sessions[sessionId] = {
+              username: body.username,
+              createdAt: new Date().toISOString()
+            };
+
+            return {
+              matches: true,
+              response: {
+                status_code: 200,
+                headers: {"Set-Cookie": "sessionId=" + sessionId},
+                body: JSON.stringify({sessionId: sessionId})
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 401,
+              body: JSON.stringify({error: "Invalid credentials"})
+            }
+          };
+        })()
+    response:
+      status_code: 500
+
+  - name: "Protected Resource"
+    request:
+      uri: "/api/profile"
+      method: "GET"
+      javascript: |
+        (function() {
+          var cookie = request.headers["Cookie"] || "";
+          var match = cookie.match(/sessionId=([^;]+)/);
+
+          if (!match || !global.sessions || !global.sessions[match[1]]) {
+            return {
+              matches: true,
+              response: {
+                status_code: 401,
+                body: JSON.stringify({error: "Not authenticated"})
+              }
+            };
+          }
+
+          var session = global.sessions[match[1]];
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              body: JSON.stringify({username: session.username})
+            }
+          };
+        })()
+    response:
+      status_code: 500
+```
+
+#### Rate Limiting Example
+
+```yaml
+mocks:
+  - name: "Rate Limited API"
+    request:
+      uri: "/api/limited"
+      method: "GET"
+      javascript: |
+        (function() {
+          if (!global.requestCounts) {
+            global.requestCounts = {};
+          }
+
+          var clientIp = request.headers["X-Forwarded-For"] || "default";
+          global.requestCounts[clientIp] = (global.requestCounts[clientIp] || 0) + 1;
+
+          if (global.requestCounts[clientIp] > 10) {
+            return {
+              matches: true,
+              response: {
+                status_code: 429,
+                headers: {"X-RateLimit-Remaining": "0"},
+                body: JSON.stringify({error: "Too many requests"})
+              }
+            };
+          }
+
+          return {
+            matches: true,
+            response: {
+              status_code: 200,
+              headers: {"X-RateLimit-Remaining": String(10 - global.requestCounts[clientIp])},
+              body: JSON.stringify({message: "Success"})
+            }
+          };
+        })()
+    response:
+      status_code: 500
+```
+
+**Important Notes:**
+- Global state persists across all JavaScript-enabled mocks
+- State is thread-safe for concurrent requests
+- State survives mock file reloads (hot-reload preserves state)
+- State is cleared when the server restarts
+- Use `global.propertyName` to store and access data
+- Complex data structures (arrays, objects) are fully supported
+
+See `mocks/stateful-examples.yaml` for complete CRUD and session examples.
+
 ### Priority System
 
 When multiple mocks could match a request, the mock with the **highest priority** is chosen first. This allows you to create:
@@ -286,6 +719,9 @@ The `mocks/` directory contains several example files demonstrating various feat
 
 - `basic-examples.yaml`: Simple exact matching examples
 - `regex-examples.yaml`: Advanced regex matching patterns
+- `jsonpath-examples.yaml`: GJSON path matching examples
+- `javascript-examples.yaml`: JavaScript evaluation examples
+- `stateful-examples.yaml`: Global state and stateful API simulations (CRUD, sessions, rate limiting)
 - `apis/external-service.yaml`: Examples in a subdirectory
 
 ## Development
@@ -306,6 +742,8 @@ go run main.go
 
 - [fsnotify](https://github.com/fsnotify/fsnotify) - File system notifications
 - [yaml.v3](https://gopkg.in/yaml.v3) - YAML parsing
+- [gjson](https://github.com/tidwall/gjson) - JSON path matching
+- [goja](https://github.com/dop251/goja) - JavaScript runtime for Go
 
 ## License
 

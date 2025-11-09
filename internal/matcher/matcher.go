@@ -6,13 +6,19 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
+	"github.com/dop251/goja"
+	"github.com/tidwall/gjson"
 )
 
 // Matcher handles matching incoming requests to mock specifications
 type Matcher struct {
-	mocks []models.Mock
+	mocks       []models.Mock
+	globalVM    *goja.Runtime         // Persistent JS runtime for global state
+	globalState map[string]interface{} // Global state shared across JavaScript evaluations
+	stateMu     sync.RWMutex           // Mutex to protect global state
 }
 
 // NewMatcher creates a new request matcher
@@ -24,8 +30,18 @@ func NewMatcher(mocks []models.Mock) *Matcher {
 		return sortedMocks[i].Priority > sortedMocks[j].Priority
 	})
 
+	// Create a persistent VM for global state
+	globalVM := goja.New()
+	// Initialize global object in the VM
+	if err := globalVM.Set("global", globalVM.NewObject()); err != nil {
+		// This should never fail during initialization, but handle it defensively
+		panic("failed to initialize global object in JavaScript VM: " + err.Error())
+	}
+
 	return &Matcher{
-		mocks: sortedMocks,
+		mocks:       sortedMocks,
+		globalVM:    globalVM,
+		globalState: make(map[string]interface{}),
 	}
 }
 
@@ -40,6 +56,22 @@ func (m *Matcher) FindMatch(r *http.Request) (*models.Mock, error) {
 
 	// Try to match each mock in priority order
 	for _, mock := range m.mocks {
+		// For JavaScript evaluation, we need special handling
+		if mock.Request.JavaScript != "" {
+			matches, customResponse := m.evaluateJavaScript(r, bodyStr, mock.Request.JavaScript)
+			if matches {
+				// Create a copy of the mock
+				matchedMock := mock
+				// If JavaScript returned a custom response, use it
+				if customResponse != nil {
+					matchedMock.Response = *customResponse
+				}
+				return &matchedMock, nil
+			}
+			continue
+		}
+
+		// Standard matching
 		if m.matches(r, bodyStr, &mock) {
 			return &mock, nil
 		}
@@ -68,6 +100,13 @@ func (m *Matcher) matches(r *http.Request, body string, mock *models.Mock) bool 
 	// Match body (if specified)
 	if mock.Request.Body != "" {
 		if !m.matchString(body, mock.Request.Body, mock.Request.IsRegex.Body) {
+			return false
+		}
+	}
+
+	// Match JSON path (if specified)
+	if len(mock.Request.JSONPath) > 0 {
+		if !m.matchJSONPath(body, mock.Request.JSONPath) {
 			return false
 		}
 	}
@@ -145,6 +184,7 @@ func (m *Matcher) matchHeaders(requestHeaders http.Header, mockHeaders map[strin
 }
 
 // UpdateMocks updates the matcher with new mocks
+// Note: This preserves the global state across mock reloads
 func (m *Matcher) UpdateMocks(mocks []models.Mock) {
 	// Sort mocks by priority (higher priority first)
 	sortedMocks := make([]models.Mock, len(mocks))
@@ -154,4 +194,122 @@ func (m *Matcher) UpdateMocks(mocks []models.Mock) {
 	})
 
 	m.mocks = sortedMocks
+	// Note: We intentionally do NOT reset globalState here
+	// This allows state to persist across mock file reloads
+}
+
+// matchJSONPath matches request body against GJSON path matchers
+func (m *Matcher) matchJSONPath(body string, matchers []models.JSONPathMatcher) bool {
+	// Validate that the body is valid JSON
+	if !gjson.Valid(body) {
+		return false
+	}
+
+	// Check each path matcher
+	for _, matcher := range matchers {
+		result := gjson.Get(body, matcher.Path)
+		if !result.Exists() {
+			return false
+		}
+
+		resultStr := result.String()
+		if matcher.Regex {
+			// Use regex matching
+			matched, err := regexp.MatchString(matcher.Value, resultStr)
+			if err != nil || !matched {
+				return false
+			}
+		} else {
+			// Exact match
+			if resultStr != matcher.Value {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// evaluateJavaScript evaluates JavaScript code to determine if request matches
+// Returns (matches bool, customResponse *models.Response)
+func (m *Matcher) evaluateJavaScript(r *http.Request, body string, script string) (bool, *models.Response) {
+	// Lock for thread-safe access to global state
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+
+	// Prepare the request object for JavaScript
+	headers := make(map[string]string)
+	for key, values := range r.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+
+	requestObj := map[string]interface{}{
+		"uri":     r.URL.Path,
+		"method":  r.Method,
+		"headers": headers,
+		"body":    body,
+	}
+
+	// Set the request object in the global VM
+	err := m.globalVM.Set("request", requestObj)
+	if err != nil {
+		return false, nil
+	}
+
+	// Execute the JavaScript code in the global VM
+	// This allows the script to access and modify the persistent global object
+	result, err := m.globalVM.RunString(script)
+	if err != nil {
+		return false, nil
+	}
+
+	// Parse the result
+	resultObj := result.Export()
+	if resultMap, ok := resultObj.(map[string]interface{}); ok {
+		// Check if matches is true
+		matches, matchesOk := resultMap["matches"].(bool)
+		if !matchesOk || !matches {
+			return false, nil
+		}
+
+		// Check for custom response
+		if responseData, hasResponse := resultMap["response"]; hasResponse && responseData != nil {
+			if responseMap, ok := responseData.(map[string]interface{}); ok {
+				customResponse := &models.Response{}
+
+				// Parse status code
+				if statusCode, ok := responseMap["status_code"].(int64); ok {
+					customResponse.StatusCode = int(statusCode)
+				}
+
+				// Parse headers
+				if headersData, ok := responseMap["headers"].(map[string]interface{}); ok {
+					customResponse.Headers = make(map[string]string)
+					for k, v := range headersData {
+						if strVal, ok := v.(string); ok {
+							customResponse.Headers[k] = strVal
+						}
+					}
+				}
+
+				// Parse body
+				if bodyData, ok := responseMap["body"].(string); ok {
+					customResponse.Body = bodyData
+				}
+
+				// Parse delay
+				if delay, ok := responseMap["delay"].(int64); ok {
+					customResponse.Delay = int(delay)
+				}
+
+				return true, customResponse
+			}
+		}
+
+		return true, nil
+	}
+
+	return false, nil
 }
