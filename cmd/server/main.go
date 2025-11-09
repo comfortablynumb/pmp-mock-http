@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -16,12 +17,30 @@ import (
 	"github.com/comfortablynumb/pmp-mock-http/internal/watcher"
 )
 
+// getEnvInt gets an integer value from environment variable, or returns the default
+func getEnvInt(key string, defaultVal int) int {
+	if val := os.Getenv(key); val != "" {
+		if intVal, err := strconv.Atoi(val); err == nil {
+			return intVal
+		}
+	}
+	return defaultVal
+}
+
+// getEnvString gets a string value from environment variable, or returns the default
+func getEnvString(key string, defaultVal string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return defaultVal
+}
+
 var (
-	port       = flag.Int("port", 8083, "HTTP server port")
-	uiPort     = flag.Int("ui-port", 8081, "UI dashboard port")
-	mocksDir   = flag.String("mocks-dir", "mocks", "Directory containing mock YAML files")
-	pluginsDir = flag.String("plugins-dir", "plugins", "Directory to store plugin repositories")
-	pluginList = flag.String("plugins", "", "Comma-separated list of git repository URLs to clone as plugins")
+	port       = flag.Int("port", getEnvInt("PORT", 8083), "HTTP server port")
+	uiPort     = flag.Int("ui-port", getEnvInt("UI_PORT", 8081), "UI dashboard port")
+	mocksDir   = flag.String("mocks-dir", getEnvString("MOCKS_DIR", "mocks"), "Directory containing mock YAML files")
+	pluginsDir = flag.String("plugins-dir", getEnvString("PLUGINS_DIR", "plugins"), "Directory to store plugin repositories")
+	pluginList = flag.String("plugins", getEnvString("PLUGINS", ""), "Comma-separated list of git repository URLs to clone as plugins")
 )
 
 func main() {

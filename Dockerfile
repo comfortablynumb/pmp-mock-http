@@ -29,12 +29,17 @@ WORKDIR /app
 # Copy the binary from builder
 COPY --from=builder /build/pmp-mock-http .
 
-# Create mocks directory
-RUN mkdir -p /app/mocks
+# Create mocks and plugins directories
+RUN mkdir -p /mocks /plugins
 
-# Expose default port
-EXPOSE 8083
+# Set environment variables
+ENV MOCKS_DIR=/mocks
+ENV PLUGINS_DIR=/plugins
+ENV PORT=8080
+ENV UI_PORT=8081
+
+# Expose default ports
+EXPOSE 8080 8081
 
 # Run the application
 ENTRYPOINT ["/app/pmp-mock-http"]
-CMD ["--mocks-dir", "/app/mocks"]

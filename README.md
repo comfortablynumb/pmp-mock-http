@@ -32,18 +32,27 @@ go build -o pmp-mock-http ./cmd/server
 
 ### Docker
 
+The Docker image comes with the following default environment variables:
+- `PORT=8080` (mock server)
+- `UI_PORT=8081` (dashboard)
+- `MOCKS_DIR=/mocks`
+- `PLUGINS_DIR=/plugins`
+
 ```bash
 # Build the Docker image
 docker build -t pmp-mock-http .
 
-# Run with default settings (port 8083, mocks from /app/mocks)
-docker run -p 8083:8083 -v $(pwd)/mocks:/app/mocks pmp-mock-http
+# Run with default settings
+docker run -p 8080:8080 -p 8081:8081 -v $(pwd)/mocks:/mocks pmp-mock-http
 
-# Run with custom port
-docker run -p 9000:9000 -v $(pwd)/mocks:/app/mocks pmp-mock-http --port 9000
+# Run with custom port using environment variables
+docker run -p 9000:9000 -p 8081:8081 -e PORT=9000 -v $(pwd)/mocks:/mocks pmp-mock-http
 
-# Run with custom mocks directory
-docker run -p 8083:8083 -v /path/to/your/mocks:/custom/mocks pmp-mock-http --mocks-dir /custom/mocks
+# Run with custom mocks directory using environment variables
+docker run -p 8080:8080 -p 8081:8081 -e MOCKS_DIR=/custom/mocks -v $(pwd)/mocks:/custom/mocks pmp-mock-http
+
+# Override environment variables with flags
+docker run -p 9000:9000 -p 8081:8081 -e PORT=8080 -v $(pwd)/mocks:/mocks pmp-mock-http --port 9000
 ```
 
 **Note:** The Docker image includes `git` for any git-based operations you might need.
@@ -66,15 +75,44 @@ docker run -p 8083:8083 -v /path/to/your/mocks:/custom/mocks pmp-mock-http --moc
 ./pmp-mock-http -port 9000 -mocks-dir /path/to/mocks
 ```
 
-### Command Line Flags
+### Configuration
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-port` | 8083 | HTTP server port |
-| `-ui-port` | 8081 | UI dashboard port |
-| `-mocks-dir` | mocks | Directory containing mock YAML files |
-| `-plugins-dir` | plugins | Directory to store plugin repositories |
-| `-plugins` | "" | Comma-separated list of git repository URLs to clone as plugins |
+Configuration values can be set via environment variables or command-line flags. **Command-line flags take precedence over environment variables.**
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 8083 | HTTP server port |
+| `UI_PORT` | 8081 | UI dashboard port |
+| `MOCKS_DIR` | mocks | Directory containing mock YAML files |
+| `PLUGINS_DIR` | plugins | Directory to store plugin repositories |
+| `PLUGINS` | "" | Comma-separated list of git repository URLs to clone as plugins |
+
+#### Command Line Flags
+
+| Flag | Environment Variable | Description |
+|------|---------------------|-------------|
+| `-port` | `PORT` | HTTP server port |
+| `-ui-port` | `UI_PORT` | UI dashboard port |
+| `-mocks-dir` | `MOCKS_DIR` | Directory containing mock YAML files |
+| `-plugins-dir` | `PLUGINS_DIR` | Directory to store plugin repositories |
+| `-plugins` | `PLUGINS` | Comma-separated list of git repository URLs to clone as plugins |
+
+**Examples:**
+
+```bash
+# Using environment variables
+export PORT=9000
+export MOCKS_DIR=/custom/mocks
+./pmp-mock-http
+
+# Using command-line flags (overrides environment variables)
+PORT=9000 ./pmp-mock-http -port 8080  # Will use port 8080
+
+# Docker with environment variables
+docker run -e PORT=9000 -e MOCKS_DIR=/mocks -v $(pwd)/mocks:/mocks ironedge/pmp-mock-http
+```
 
 ### UI Dashboard
 
@@ -139,19 +177,25 @@ my-api-mocks/
 #### Docker with Plugins
 
 ```bash
-# Run with plugins
-docker run -p 8083:8083 \
-  -v $(pwd)/mocks:/app/mocks \
+# Run with plugins using environment variable
+docker run -p 8080:8080 -p 8081:8081 \
+  -v $(pwd)/mocks:/mocks \
+  -e PLUGINS="https://github.com/user/api-mocks.git" \
+  pmp-mock-http
+
+# With custom plugins directory and multiple plugins
+docker run -p 8080:8080 -p 8081:8081 \
+  -v $(pwd)/mocks:/mocks \
+  -v $(pwd)/plugins:/custom-plugins \
+  -e PLUGINS_DIR=/custom-plugins \
+  -e PLUGINS="https://github.com/user/mocks1.git,https://github.com/user/mocks2.git" \
+  pmp-mock-http
+
+# Using flags (override environment variables)
+docker run -p 8080:8080 -p 8081:8081 \
+  -v $(pwd)/mocks:/mocks \
   pmp-mock-http \
   --plugins "https://github.com/user/api-mocks.git"
-
-# With custom plugins directory
-docker run -p 8083:8083 \
-  -v $(pwd)/mocks:/app/mocks \
-  -v $(pwd)/plugins:/app/plugins \
-  pmp-mock-http \
-  --plugins-dir /app/plugins \
-  --plugins "https://github.com/user/mocks.git"
 ```
 
 **Note**: The Docker image includes git, so plugin cloning works out of the box.
