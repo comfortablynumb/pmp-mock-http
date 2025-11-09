@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -13,13 +12,20 @@ import (
 type Manager struct {
 	pluginsDir string
 	repos      []string
+	gitClient  GitClient
 }
 
-// NewManager creates a new plugin manager
+// NewManager creates a new plugin manager with a real git client
 func NewManager(pluginsDir string, repos []string) *Manager {
+	return NewManagerWithGitClient(pluginsDir, repos, NewRealGitClient())
+}
+
+// NewManagerWithGitClient creates a new plugin manager with a custom git client
+func NewManagerWithGitClient(pluginsDir string, repos []string, gitClient GitClient) *Manager {
 	return &Manager{
 		pluginsDir: pluginsDir,
 		repos:      repos,
+		gitClient:  gitClient,
 	}
 }
 
@@ -72,28 +78,12 @@ func (m *Manager) SetupPlugins() ([]string, error) {
 
 // cloneRepo clones a git repository to the specified path
 func (m *Manager) cloneRepo(repoURL, destPath string) error {
-	cmd := exec.Command("git", "clone", repoURL, destPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git clone failed: %w", err)
-	}
-
-	return nil
+	return m.gitClient.Clone(repoURL, destPath)
 }
 
 // updateRepo updates an existing git repository
 func (m *Manager) updateRepo(repoPath string) error {
-	cmd := exec.Command("git", "-C", repoPath, "pull")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git pull failed: %w", err)
-	}
-
-	return nil
+	return m.gitClient.Pull(repoPath)
 }
 
 // extractRepoName extracts the repository name from a git URL
