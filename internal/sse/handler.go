@@ -47,7 +47,10 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial retry value if configured
 	if h.mock.SSE != nil && h.mock.SSE.Retry > 0 {
-		fmt.Fprintf(w, "retry: %d\n\n", h.mock.SSE.Retry)
+		if _, err := fmt.Fprintf(w, "retry: %d\n\n", h.mock.SSE.Retry); err != nil {
+			log.Printf("SSE: Error writing retry value: %v\n", err)
+			return
+		}
 		flusher.Flush()
 	}
 
@@ -93,7 +96,10 @@ func (h *Handler) handleEventSequence(w http.ResponseWriter, flusher http.Flushe
 			for {
 				select {
 				case <-keepAliveTicker.C:
-					fmt.Fprintf(w, ": keep-alive\n\n")
+					if _, err := fmt.Fprintf(w, ": keep-alive\n\n"); err != nil {
+						log.Printf("SSE: Error writing keep-alive: %v\n", err)
+						return
+					}
 					flusher.Flush()
 				case <-keepAliveStop:
 					return
@@ -165,11 +171,15 @@ func (h *Handler) handleJavaScriptMode(w http.ResponseWriter, flusher http.Flush
 	vm := goja.New()
 
 	// Set up console
-	vm.Set("console", map[string]interface{}{
+	if err := vm.Set("console", map[string]interface{}{
 		"log": func(args ...interface{}) {
 			log.Println("SSE JS:", fmt.Sprint(args...))
 		},
-	})
+	}); err != nil {
+		log.Printf("SSE: Error setting console in JavaScript VM: %v\n", err)
+		h.sendEvent(w, flusher, "error", fmt.Sprintf("JavaScript setup error: %v", err), "", 0)
+		return
+	}
 
 	// Create SSE object with send methods
 	sseObj := map[string]interface{}{
@@ -183,23 +193,39 @@ func (h *Handler) handleJavaScriptMode(w http.ResponseWriter, flusher http.Flush
 			// Signal to close the connection
 		},
 	}
-	vm.Set("sse", sseObj)
+	if err := vm.Set("sse", sseObj); err != nil {
+		log.Printf("SSE: Error setting sse object in JavaScript VM: %v\n", err)
+		h.sendEvent(w, flusher, "error", fmt.Sprintf("JavaScript setup error: %v", err), "", 0)
+		return
+	}
 
 	// Set up request object
-	vm.Set("request", map[string]interface{}{
+	if err := vm.Set("request", map[string]interface{}{
 		"uri":        requestData.URI,
 		"method":     requestData.Method,
 		"headers":    requestData.Headers,
 		"remoteAddr": requestData.RemoteAddr,
-	})
+	}); err != nil {
+		log.Printf("SSE: Error setting request object in JavaScript VM: %v\n", err)
+		h.sendEvent(w, flusher, "error", fmt.Sprintf("JavaScript setup error: %v", err), "", 0)
+		return
+	}
 
 	// Set up global state object
-	vm.Set("global", vm.NewObject())
+	if err := vm.Set("global", vm.NewObject()); err != nil {
+		log.Printf("SSE: Error setting global object in JavaScript VM: %v\n", err)
+		h.sendEvent(w, flusher, "error", fmt.Sprintf("JavaScript setup error: %v", err), "", 0)
+		return
+	}
 
 	// Sleep function for JavaScript
-	vm.Set("sleep", func(ms int) {
+	if err := vm.Set("sleep", func(ms int) {
 		time.Sleep(time.Duration(ms) * time.Millisecond)
-	})
+	}); err != nil {
+		log.Printf("SSE: Error setting sleep function in JavaScript VM: %v\n", err)
+		h.sendEvent(w, flusher, "error", fmt.Sprintf("JavaScript setup error: %v", err), "", 0)
+		return
+	}
 
 	// Execute JavaScript code
 	_, err := vm.RunString(h.mock.SSE.JavaScript)
@@ -213,21 +239,33 @@ func (h *Handler) handleJavaScriptMode(w http.ResponseWriter, flusher http.Flush
 func (h *Handler) sendEvent(w http.ResponseWriter, flusher http.Flusher, eventType, data, id string, retry int) {
 	// Send event type if specified
 	if eventType != "" {
-		fmt.Fprintf(w, "event: %s\n", eventType)
+		if _, err := fmt.Fprintf(w, "event: %s\n", eventType); err != nil {
+			log.Printf("SSE: Error writing event type: %v\n", err)
+			return
+		}
 	}
 
 	// Send ID if specified
 	if id != "" {
-		fmt.Fprintf(w, "id: %s\n", id)
+		if _, err := fmt.Fprintf(w, "id: %s\n", id); err != nil {
+			log.Printf("SSE: Error writing event ID: %v\n", err)
+			return
+		}
 	}
 
 	// Send retry if specified
 	if retry > 0 {
-		fmt.Fprintf(w, "retry: %d\n", retry)
+		if _, err := fmt.Fprintf(w, "retry: %d\n", retry); err != nil {
+			log.Printf("SSE: Error writing retry: %v\n", err)
+			return
+		}
 	}
 
 	// Send data (can be multiline)
-	fmt.Fprintf(w, "data: %s\n\n", data)
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+		log.Printf("SSE: Error writing event data: %v\n", err)
+		return
+	}
 
 	// Flush to send immediately
 	flusher.Flush()

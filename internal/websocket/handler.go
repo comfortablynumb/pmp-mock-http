@@ -81,7 +81,9 @@ func (h *Handler) HandleConnection(w http.ResponseWriter, r *http.Request) {
 		h.mu.Lock()
 		delete(h.connections, conn)
 		h.mu.Unlock()
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			log.Printf("WebSocket: Error closing connection: %v\n", err)
+		}
 		log.Printf("WebSocket: Connection closed from %s\n", r.RemoteAddr)
 	}()
 
