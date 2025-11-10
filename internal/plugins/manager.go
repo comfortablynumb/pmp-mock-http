@@ -10,22 +10,29 @@ import (
 
 // Manager handles cloning and managing plugin repositories
 type Manager struct {
-	pluginsDir string
-	repos      []string
-	gitClient  GitClient
+	pluginsDir   string
+	repos        []string
+	gitClient    GitClient
+	includeOnly  []string // Relative paths from pmp-mock-http to include
 }
 
 // NewManager creates a new plugin manager with a real git client
 func NewManager(pluginsDir string, repos []string) *Manager {
-	return NewManagerWithGitClient(pluginsDir, repos, NewRealGitClient())
+	return NewManagerWithGitClient(pluginsDir, repos, NewRealGitClient(), nil)
+}
+
+// NewManagerWithIncludeFilter creates a new plugin manager with include filter
+func NewManagerWithIncludeFilter(pluginsDir string, repos []string, includeOnly []string) *Manager {
+	return NewManagerWithGitClient(pluginsDir, repos, NewRealGitClient(), includeOnly)
 }
 
 // NewManagerWithGitClient creates a new plugin manager with a custom git client
-func NewManagerWithGitClient(pluginsDir string, repos []string, gitClient GitClient) *Manager {
+func NewManagerWithGitClient(pluginsDir string, repos []string, gitClient GitClient, includeOnly []string) *Manager {
 	return &Manager{
-		pluginsDir: pluginsDir,
-		repos:      repos,
-		gitClient:  gitClient,
+		pluginsDir:  pluginsDir,
+		repos:       repos,
+		gitClient:   gitClient,
+		includeOnly: includeOnly,
 	}
 }
 
@@ -70,7 +77,28 @@ func (m *Manager) SetupPlugins() ([]string, error) {
 			log.Printf("Plugin '%s' cloned successfully\n", repoName)
 		}
 
-		pluginDirs = append(pluginDirs, pluginPath)
+		// Look for pmp-mock-http directory in the plugin
+		pmpMockHTTPDir := filepath.Join(pluginPath, "pmp-mock-http")
+		if _, err := os.Stat(pmpMockHTTPDir); err != nil {
+			log.Printf("Warning: plugin '%s' does not have a 'pmp-mock-http' directory, skipping\n", repoName)
+			continue
+		}
+
+		// If includeOnly is specified, only add those subdirectories
+		if len(m.includeOnly) > 0 {
+			for _, subdir := range m.includeOnly {
+				subdirPath := filepath.Join(pmpMockHTTPDir, subdir)
+				if _, err := os.Stat(subdirPath); err == nil {
+					pluginDirs = append(pluginDirs, subdirPath)
+					log.Printf("Including plugin subdirectory: %s/%s\n", repoName, subdir)
+				} else {
+					log.Printf("Warning: plugin '%s' does not have subdirectory '%s', skipping\n", repoName, subdir)
+				}
+			}
+		} else {
+			// Include the entire pmp-mock-http directory
+			pluginDirs = append(pluginDirs, pmpMockHTTPDir)
+		}
 	}
 
 	return pluginDirs, nil

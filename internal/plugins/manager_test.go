@@ -83,7 +83,7 @@ func TestNewManager(t *testing.T) {
 func TestNewManagerWithGitClient(t *testing.T) {
 	mockGit := NewMockGitClient()
 	repos := []string{"https://github.com/user/repo.git"}
-	manager := NewManagerWithGitClient("/tmp/plugins", repos, mockGit)
+	manager := NewManagerWithGitClient("/tmp/plugins", repos, mockGit, nil)
 
 	if manager == nil {
 		t.Fatal("Expected manager to be created")
@@ -96,7 +96,7 @@ func TestNewManagerWithGitClient(t *testing.T) {
 
 func TestSetupPluginsEmpty(t *testing.T) {
 	mockGit := NewMockGitClient()
-	manager := NewManagerWithGitClient("/tmp/plugins", []string{}, mockGit)
+	manager := NewManagerWithGitClient("/tmp/plugins", []string{}, mockGit, nil)
 
 	dirs, err := manager.SetupPlugins()
 
@@ -119,8 +119,15 @@ func TestSetupPluginsCloneNew(t *testing.T) {
 	pluginsDir := filepath.Join(tmpDir, "plugins")
 
 	mockGit := NewMockGitClient()
+
+	// Set up callback to create pmp-mock-http directory after clone
+	mockGit.SetCloneCallback(func(repoURL, destPath string) error {
+		pmpDir := filepath.Join(destPath, "pmp-mock-http")
+		return os.MkdirAll(pmpDir, 0755)
+	})
+
 	repos := []string{"https://github.com/user/test-repo.git"}
-	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit)
+	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit, nil)
 
 	dirs, err := manager.SetupPlugins()
 
@@ -132,16 +139,17 @@ func TestSetupPluginsCloneNew(t *testing.T) {
 		t.Fatalf("Expected 1 directory, got %d", len(dirs))
 	}
 
-	expectedPath := filepath.Join(pluginsDir, "test-repo")
-	if dirs[0] != expectedPath {
-		t.Errorf("Expected directory %s, got %s", expectedPath, dirs[0])
+	expectedRepoPath := filepath.Join(pluginsDir, "test-repo")
+	expectedPmpPath := filepath.Join(expectedRepoPath, "pmp-mock-http")
+	if dirs[0] != expectedPmpPath {
+		t.Errorf("Expected directory %s, got %s", expectedPmpPath, dirs[0])
 	}
 
 	if mockGit.GetCloneCallCount() != 1 {
 		t.Errorf("Expected Clone to be called once, got %d", mockGit.GetCloneCallCount())
 	}
 
-	if err := mockGit.AssertCloneCalled("https://github.com/user/test-repo.git", expectedPath); err != nil {
+	if err := mockGit.AssertCloneCalled("https://github.com/user/test-repo.git", expectedRepoPath); err != nil {
 		t.Error(err)
 	}
 
@@ -155,15 +163,16 @@ func TestSetupPluginsUpdateExisting(t *testing.T) {
 	tmpDir := t.TempDir()
 	pluginsDir := filepath.Join(tmpDir, "plugins")
 
-	// Create the plugin directory to simulate existing repository
+	// Create the plugin directory with pmp-mock-http subdirectory to simulate existing repository
 	repoPath := filepath.Join(pluginsDir, "test-repo")
-	if err := os.MkdirAll(repoPath, 0755); err != nil {
+	pmpPath := filepath.Join(repoPath, "pmp-mock-http")
+	if err := os.MkdirAll(pmpPath, 0755); err != nil {
 		t.Fatal(err)
 	}
 
 	mockGit := NewMockGitClient()
 	repos := []string{"https://github.com/user/test-repo.git"}
-	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit)
+	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit, nil)
 
 	dirs, err := manager.SetupPlugins()
 
@@ -173,6 +182,10 @@ func TestSetupPluginsUpdateExisting(t *testing.T) {
 
 	if len(dirs) != 1 {
 		t.Fatalf("Expected 1 directory, got %d", len(dirs))
+	}
+
+	if dirs[0] != pmpPath {
+		t.Errorf("Expected directory %s, got %s", pmpPath, dirs[0])
 	}
 
 	if mockGit.GetCloneCallCount() != 0 {
@@ -193,12 +206,19 @@ func TestSetupPluginsMultipleRepos(t *testing.T) {
 	pluginsDir := filepath.Join(tmpDir, "plugins")
 
 	mockGit := NewMockGitClient()
+
+	// Set up callback to create pmp-mock-http directory after clone
+	mockGit.SetCloneCallback(func(repoURL, destPath string) error {
+		pmpDir := filepath.Join(destPath, "pmp-mock-http")
+		return os.MkdirAll(pmpDir, 0755)
+	})
+
 	repos := []string{
 		"https://github.com/user/repo1.git",
 		"https://github.com/user/repo2.git",
 		"https://github.com/user/repo3.git",
 	}
-	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit)
+	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit, nil)
 
 	dirs, err := manager.SetupPlugins()
 
@@ -214,12 +234,26 @@ func TestSetupPluginsMultipleRepos(t *testing.T) {
 		t.Errorf("Expected Clone to be called 3 times, got %d", mockGit.GetCloneCallCount())
 	}
 
-	// Verify all repos were cloned
+	// Verify all repos were cloned and pmp-mock-http paths are returned
 	for i, repo := range repos {
 		repoName := extractRepoName(repo)
-		expectedPath := filepath.Join(pluginsDir, repoName)
-		if err := mockGit.AssertCloneCalled(repo, expectedPath); err != nil {
+		expectedRepoPath := filepath.Join(pluginsDir, repoName)
+		expectedPmpPath := filepath.Join(expectedRepoPath, "pmp-mock-http")
+
+		if err := mockGit.AssertCloneCalled(repo, expectedRepoPath); err != nil {
 			t.Errorf("Repo %d: %v", i, err)
+		}
+
+		// Check that the pmp-mock-http path is in the returned dirs
+		found := false
+		for _, dir := range dirs {
+			if dir == expectedPmpPath {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected pmp-mock-http path %s not found in dirs", expectedPmpPath)
 		}
 	}
 }
@@ -232,7 +266,7 @@ func TestSetupPluginsCloneError(t *testing.T) {
 	mockGit.SetCloneError(os.ErrPermission)
 
 	repos := []string{"https://github.com/user/repo.git"}
-	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit)
+	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit, nil)
 
 	dirs, err := manager.SetupPlugins()
 
@@ -251,9 +285,10 @@ func TestSetupPluginsPullError(t *testing.T) {
 	tmpDir := t.TempDir()
 	pluginsDir := filepath.Join(tmpDir, "plugins")
 
-	// Create existing repository
+	// Create existing repository with pmp-mock-http directory
 	repoPath := filepath.Join(pluginsDir, "repo")
-	if err := os.MkdirAll(repoPath, 0755); err != nil {
+	pmpPath := filepath.Join(repoPath, "pmp-mock-http")
+	if err := os.MkdirAll(pmpPath, 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -261,7 +296,7 @@ func TestSetupPluginsPullError(t *testing.T) {
 	mockGit.SetPullError(os.ErrPermission)
 
 	repos := []string{"https://github.com/user/repo.git"}
-	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit)
+	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit, nil)
 
 	dirs, err := manager.SetupPlugins()
 
@@ -270,9 +305,13 @@ func TestSetupPluginsPullError(t *testing.T) {
 		t.Errorf("Expected no error (warnings are logged), got %v", err)
 	}
 
-	// Should still return the directory even if pull failed
+	// Should still return the pmp-mock-http directory even if pull failed
 	if len(dirs) != 1 {
 		t.Errorf("Expected 1 directory (continue with existing version), got %d", len(dirs))
+	}
+
+	if dirs[0] != pmpPath {
+		t.Errorf("Expected directory %s, got %s", pmpPath, dirs[0])
 	}
 }
 
@@ -285,7 +324,7 @@ func TestSetupPluginsInvalidURL(t *testing.T) {
 	mockGit.SetCloneError(os.ErrInvalid)
 
 	repos := []string{"not-a-valid-url"}
-	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit)
+	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit, nil)
 
 	dirs, err := manager.SetupPlugins()
 
@@ -302,5 +341,97 @@ func TestSetupPluginsInvalidURL(t *testing.T) {
 	// Verify clone was attempted (extractRepoName returns "not-a-valid-url")
 	if mockGit.GetCloneCallCount() != 1 {
 		t.Errorf("Expected Clone to be called once, got %d", mockGit.GetCloneCallCount())
+	}
+}
+
+func TestSetupPluginsWithIncludeFilter(t *testing.T) {
+	tmpDir := t.TempDir()
+	pluginsDir := filepath.Join(tmpDir, "plugins")
+
+	mockGit := NewMockGitClient()
+
+	// Set up callback to create pmp-mock-http directory with subdirectories
+	mockGit.SetCloneCallback(func(repoURL, destPath string) error {
+		pmpDir := filepath.Join(destPath, "pmp-mock-http")
+		// Create multiple subdirectories
+		if err := os.MkdirAll(filepath.Join(pmpDir, "openai"), 0755); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Join(pmpDir, "stripe"), 0755); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Join(pmpDir, "github"), 0755); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	repos := []string{"https://github.com/user/api-mocks.git"}
+	includeFilter := []string{"openai", "stripe"}
+	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit, includeFilter)
+
+	dirs, err := manager.SetupPlugins()
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	// Should only return 2 directories (openai and stripe, not github)
+	if len(dirs) != 2 {
+		t.Fatalf("Expected 2 directories, got %d", len(dirs))
+	}
+
+	// Check the returned directories
+	expectedDirs := map[string]bool{
+		filepath.Join(pluginsDir, "api-mocks", "pmp-mock-http", "openai"): false,
+		filepath.Join(pluginsDir, "api-mocks", "pmp-mock-http", "stripe"): false,
+	}
+
+	for _, dir := range dirs {
+		if _, ok := expectedDirs[dir]; ok {
+			expectedDirs[dir] = true
+		} else {
+			t.Errorf("Unexpected directory: %s", dir)
+		}
+	}
+
+	for dir, found := range expectedDirs {
+		if !found {
+			t.Errorf("Expected directory %s not found", dir)
+		}
+	}
+}
+
+func TestSetupPluginsWithIncludeFilterMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+	pluginsDir := filepath.Join(tmpDir, "plugins")
+
+	mockGit := NewMockGitClient()
+
+	// Set up callback to create pmp-mock-http directory with only openai subdirectory
+	mockGit.SetCloneCallback(func(repoURL, destPath string) error {
+		pmpDir := filepath.Join(destPath, "pmp-mock-http")
+		return os.MkdirAll(filepath.Join(pmpDir, "openai"), 0755)
+	})
+
+	repos := []string{"https://github.com/user/api-mocks.git"}
+	// Request both openai and stripe, but stripe doesn't exist
+	includeFilter := []string{"openai", "stripe"}
+	manager := NewManagerWithGitClient(pluginsDir, repos, mockGit, includeFilter)
+
+	dirs, err := manager.SetupPlugins()
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	// Should only return 1 directory (openai exists, stripe doesn't)
+	if len(dirs) != 1 {
+		t.Fatalf("Expected 1 directory, got %d", len(dirs))
+	}
+
+	expectedDir := filepath.Join(pluginsDir, "api-mocks", "pmp-mock-http", "openai")
+	if dirs[0] != expectedDir {
+		t.Errorf("Expected directory %s, got %s", expectedDir, dirs[0])
 	}
 }

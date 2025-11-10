@@ -4,10 +4,11 @@ import "fmt"
 
 // MockGitClient is a mock implementation of GitClient for testing
 type MockGitClient struct {
-	CloneCalls []CloneCall
-	PullCalls  []PullCall
-	CloneError error
-	PullError  error
+	CloneCalls     []CloneCall
+	PullCalls      []PullCall
+	CloneError     error
+	PullError      error
+	CloneCallback  func(repoURL, destPath string) error
 }
 
 // CloneCall records a call to Clone
@@ -38,6 +39,9 @@ func (m *MockGitClient) Clone(repoURL, destPath string) error {
 	if m.CloneError != nil {
 		return m.CloneError
 	}
+	if m.CloneCallback != nil {
+		return m.CloneCallback(repoURL, destPath)
+	}
 	return nil
 }
 
@@ -60,6 +64,11 @@ func (m *MockGitClient) SetCloneError(err error) {
 // SetPullError sets the error to return from Pull
 func (m *MockGitClient) SetPullError(err error) {
 	m.PullError = err
+}
+
+// SetCloneCallback sets a callback to run after Clone is called
+func (m *MockGitClient) SetCloneCallback(callback func(repoURL, destPath string) error) {
+	m.CloneCallback = callback
 }
 
 // GetCloneCallCount returns the number of times Clone was called

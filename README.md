@@ -19,6 +19,9 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 - ✅ **Global State**: Persistent JavaScript state for stateful mock APIs (CRUD, sessions, rate limiting)
 - ✅ **Priority System**: Control which mocks match first
 - ✅ **Response Control**: Configure status codes, headers, body, and delays
+- ✅ **Template Responses**: Use Go templates to generate dynamic responses with access to request data
+- ✅ **Fake Data Generation**: Built-in template functions for generating realistic fake data (names, emails, UUIDs, etc.)
+- ✅ **HTTP Callbacks**: Trigger HTTP callbacks to external URLs when mocks match (webhooks)
 
 ## Installation
 
@@ -88,6 +91,7 @@ Configuration values can be set via environment variables or command-line flags.
 | `MOCKS_DIR` | mocks | Directory containing mock YAML files |
 | `PLUGINS_DIR` | plugins | Directory to store plugin repositories |
 | `PLUGINS` | "" | Comma-separated list of git repository URLs to clone as plugins |
+| `PLUGIN_INCLUDE_ONLY` | "" | Space-separated list of subdirectories from pmp-mock-http to include |
 
 #### Command Line Flags
 
@@ -98,6 +102,7 @@ Configuration values can be set via environment variables or command-line flags.
 | `-mocks-dir` | `MOCKS_DIR` | Directory containing mock YAML files |
 | `-plugins-dir` | `PLUGINS_DIR` | Directory to store plugin repositories |
 | `-plugins` | `PLUGINS` | Comma-separated list of git repository URLs to clone as plugins |
+| `-plugin-include-only` | `PLUGIN_INCLUDE_ONLY` | Space-separated list of subdirectories from pmp-mock-http to include |
 
 **Examples:**
 
@@ -132,6 +137,177 @@ The server automatically starts a web dashboard on port 8081 that provides real-
 ./pmp-mock-http --ui-port 9000
 ```
 
+### Template Responses
+
+Response bodies can use Go templates to generate dynamic content based on the incoming request. Enable templates by setting `template: true` in the response configuration.
+
+#### Accessing Request Data
+
+Templates have access to the following request data:
+
+- `.Method` - HTTP method (GET, POST, etc.)
+- `.URI` - Full request URI
+- `.Path` - URL path
+- `.RawQuery` - Query string
+- `.Headers` - Request headers as a map
+- `.Body` - Request body as a string
+- `.RemoteAddr` - Client IP address
+
+#### Fake Data Functions
+
+Built-in functions for generating realistic fake data:
+
+**Identifiers:**
+- `uuid` - Generate a UUID
+- `randomString <length>` - Random alphanumeric string
+- `randomInt <min> <max>` - Random integer in range
+- `randomFloat <min> <max>` - Random float in range
+- `randomBool` - Random boolean
+
+**Names:**
+- `firstName` - Random first name
+- `lastName` - Random last name
+- `fullName` - Random full name
+- `username` - Random username
+- `email` - Random email address
+
+**Addresses:**
+- `city` - Random city
+- `country` - Random country
+- `zipCode` - Random ZIP code
+- `address` - Random street address
+
+**Business:**
+- `company` - Random company name
+- `jobTitle` - Random job title
+
+**Internet:**
+- `ipAddress` - Random IP address
+- `domain` - Random domain name
+- `url` - Random URL
+
+**Time:**
+- `now` - Current time (time.Time)
+- `timestamp` - Current Unix timestamp
+- `date` - Current date (YYYY-MM-DD)
+- `datetime` - Current datetime (RFC3339)
+
+**String utilities:**
+- `upper` - Convert to uppercase
+- `lower` - Convert to lowercase
+
+#### Template Example
+
+```yaml
+mocks:
+  - name: "Dynamic User Response"
+    request:
+      uri: "/api/users"
+      method: "POST"
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+      template: true
+      body: |
+        {
+          "id": "{{ uuid }}",
+          "username": "{{ username }}",
+          "email": "{{ email }}",
+          "created_at": "{{ datetime }}",
+          "request_from": "{{ .RemoteAddr }}",
+          "original_body": {{ .Body | printf "%q" }}
+        }
+```
+
+More examples available in `pmp-mock-http/examples/templates.yaml`.
+
+### HTTP Callbacks (Webhooks)
+
+Trigger HTTP callbacks to external URLs when a mock matches. This is useful for:
+
+- Simulating webhooks and async notifications
+- Testing event-driven architectures
+- Integrating with external services during testing
+
+#### Callback Configuration
+
+```yaml
+response:
+  status_code: 200
+  body: "..."
+  callback:
+    url: "http://localhost:8082/webhook/endpoint"
+    method: "POST"  # Optional, defaults to POST
+    headers:
+      Content-Type: "application/json"
+      X-Custom-Header: "value"
+    body: |
+      {
+        "event": "order.created",
+        "data": "..."
+      }
+```
+
+Callback bodies support template syntax just like response bodies:
+
+```yaml
+callback:
+  url: "http://localhost:8082/webhook"
+  body: |
+    {
+      "event_id": "{{ uuid }}",
+      "timestamp": {{ timestamp }},
+      "user": "{{ fullName }}",
+      "original_request": {
+        "method": "{{ .Method }}",
+        "uri": "{{ .URI }}",
+        "body": {{ .Body | printf "%q" }}
+      }
+    }
+```
+
+#### Callback Behavior
+
+- Callbacks are executed **asynchronously** (non-blocking)
+- Callbacks are executed **after** the response delay (if any)
+- Callback failures are logged but don't affect the mock response
+- Callbacks have a 30-second timeout
+
+#### Callback Example
+
+```yaml
+mocks:
+  - name: "Order with Webhook"
+    request:
+      uri: "/api/orders"
+      method: "POST"
+    response:
+      status_code: 202
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "status": "accepted",
+          "message": "Order received"
+        }
+      callback:
+        url: "http://localhost:8082/webhook/order-received"
+        method: "POST"
+        headers:
+          Content-Type: "application/json"
+          X-Event-Type: "order.created"
+        body: |
+          {
+            "event": "order.created",
+            "order_id": "{{ uuid }}",
+            "timestamp": {{ timestamp }},
+            "customer_ip": "{{ .RemoteAddr }}"
+          }
+```
+
+More examples available in `pmp-mock-http/examples/callbacks.yaml`.
+
 ### Plugins System
 
 The plugin system allows you to load mock configurations from external git repositories. This is useful for:
@@ -158,21 +334,46 @@ The plugin system allows you to load mock configurations from external git repos
 
 1. **Clone/Update**: On startup, the server clones each plugin repository to the plugins directory
 2. **Auto-Update**: If a plugin already exists, it's updated with `git pull`
-3. **Load Mocks**: All YAML files in the plugin repositories are loaded as mocks
+3. **Load Mocks**: All YAML files in the plugin repositories' `pmp-mock-http` directory are loaded as mocks
 4. **Hot-Reload**: Plugin directories are watched for changes, just like the main mocks directory
 5. **Priority**: Mocks from plugins are merged with local mocks, with priority determining match order
 
 #### Plugin Structure
 
-Each plugin repository should contain YAML mock files in any structure:
+**IMPORTANT**: Plugin repositories **must** contain a `pmp-mock-http` directory where all mock YAML files reside:
 
 ```
-my-api-mocks/
-├── users.yaml           # User API mocks
-├── products.yaml        # Product API mocks
-└── apis/
-    └── external.yaml    # External service mocks
+my-api-mocks-repo/
+└── pmp-mock-http/          # Required directory
+    ├── openai/             # OpenAI API mocks
+    │   ├── chat.yaml
+    │   └── completions.yaml
+    ├── stripe/             # Stripe API mocks
+    │   ├── customers.yaml
+    │   └── payments.yaml
+    └── github/             # GitHub API mocks
+        └── repos.yaml
 ```
+
+#### Selective Loading with Include Filter
+
+Use the `--plugin-include-only` flag to load only specific subdirectories from plugin repositories:
+
+```bash
+# Only load OpenAI and Stripe mocks from the plugin
+./pmp-mock-http \
+  --plugins "https://github.com/user/api-mocks.git" \
+  --plugin-include-only "openai stripe"
+
+# Using environment variable
+export PLUGIN_INCLUDE_ONLY="openai stripe"
+./pmp-mock-http --plugins "https://github.com/user/api-mocks.git"
+```
+
+This is useful when:
+- You only need mocks for specific services
+- You want to reduce memory usage by not loading all mocks
+- You want to avoid conflicts with local mock definitions
 
 #### Docker with Plugins
 
