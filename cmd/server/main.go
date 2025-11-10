@@ -58,9 +58,11 @@ var (
 	proxyTarget         = flag.String("proxy-target", getEnvString("PROXY_TARGET", ""), "Target URL for proxy passthrough (e.g., 'http://api.example.com')")
 	proxyPreserveHost   = flag.Bool("proxy-preserve-host", getEnvBool("PROXY_PRESERVE_HOST", false), "Preserve the original Host header when proxying")
 	proxyTimeout        = flag.Int("proxy-timeout", getEnvInt("PROXY_TIMEOUT", 30), "Proxy request timeout in seconds")
-	tlsEnabled          = flag.Bool("tls", getEnvBool("TLS_ENABLED", false), "Enable TLS/HTTPS")
+	tlsEnabled          = flag.Bool("tls", getEnvBool("TLS_ENABLED", false), "Enable TLS/HTTPS with HTTP/2")
 	tlsCertFile         = flag.String("tls-cert", getEnvString("TLS_CERT_FILE", ""), "Path to TLS certificate file")
 	tlsKeyFile          = flag.String("tls-key", getEnvString("TLS_KEY_FILE", ""), "Path to TLS private key file")
+	http3Enabled        = flag.Bool("http3", getEnvBool("HTTP3_ENABLED", false), "Enable HTTP/3 with QUIC (requires TLS)")
+	dualStack           = flag.Bool("dual-stack", getEnvBool("DUAL_STACK", false), "Enable both HTTP/2 and HTTP/3 (requires TLS)")
 	enableCORS          = flag.Bool("enable-cors", getEnvBool("ENABLE_CORS", false), "Enable CORS support")
 	corsOrigins         = flag.String("cors-origins", getEnvString("CORS_ORIGINS", "*"), "CORS allowed origins")
 	corsMethods         = flag.String("cors-methods", getEnvString("CORS_METHODS", "GET,POST,PUT,DELETE,PATCH,OPTIONS"), "CORS allowed methods")
@@ -210,14 +212,33 @@ func main() {
 	// Start server in a goroutine
 	go func() {
 		var err error
-		if *tlsEnabled {
+
+		// Validate TLS configuration for HTTP/3 and dual-stack
+		if (*http3Enabled || *dualStack) && !*tlsEnabled {
+			log.Fatalf("HTTP/3 and dual-stack mode require TLS to be enabled (--tls)\n")
+		}
+
+		if *tlsEnabled || *http3Enabled || *dualStack {
 			if *tlsCertFile == "" || *tlsKeyFile == "" {
-				log.Fatalf("TLS enabled but certificate or key file not specified\n")
+				log.Fatalf("TLS/HTTP3 enabled but certificate or key file not specified\n")
 			}
-			err = srv.StartTLS(*tlsCertFile, *tlsKeyFile)
+
+			// Choose server mode
+			if *dualStack {
+				log.Println("Starting server in dual-stack mode (HTTP/1.1, HTTP/2, HTTP/3)")
+				err = srv.StartDualStack(*tlsCertFile, *tlsKeyFile)
+			} else if *http3Enabled {
+				log.Println("Starting server in HTTP/3 mode")
+				err = srv.StartHTTP3(*tlsCertFile, *tlsKeyFile)
+			} else {
+				log.Println("Starting server in TLS mode (HTTP/1.1, HTTP/2)")
+				err = srv.StartTLS(*tlsCertFile, *tlsKeyFile)
+			}
 		} else {
+			log.Println("Starting server in HTTP/1.1 mode")
 			err = srv.Start()
 		}
+
 		if err != nil {
 			log.Fatalf("Server error: %v\n", err)
 		}

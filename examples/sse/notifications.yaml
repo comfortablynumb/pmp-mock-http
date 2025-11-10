@@ -1,0 +1,27 @@
+mocks:
+  - name: "Notification Stream"
+    protocol: "sse"
+    priority: 10
+    request:
+      uri: "/sse/notifications"
+      method: "GET"
+    sse:
+      events:
+        - event: "notification"
+          data: '{"type": "info", "title": "Welcome", "message": "Connected to notification stream"}'
+          id: "notif-1"
+          delay: 0
+        - event: "notification"
+          data: '{"type": "success", "title": "Task Complete", "message": "Your export has finished"}'
+          id: "notif-2"
+          delay: 3000
+        - event: "notification"
+          data: '{"type": "warning", "title": "Low Storage", "message": "You are running low on storage space"}'
+          id: "notif-3"
+          delay: 5000
+        - event: "notification"
+          data: '{"type": "error", "title": "Connection Lost", "message": "Could not reach remote server"}'
+          id: "notif-4"
+          delay: 2000
+      mode: "once"
+      close_after: 4  # Close after sending 4 notifications

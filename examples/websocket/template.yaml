@@ -1,0 +1,21 @@
+mocks:
+  - name: "WebSocket with Templates"
+    protocol: "websocket"
+    priority: 10
+    request:
+      uri: "/ws/info"
+      method: "GET"
+    websocket:
+      mode: "sequence"
+      template: true
+      on_connect: 'Connected from {{.RemoteAddr}} at {{now}}'
+      messages:
+        - type: "text"
+          data: '{"client": "{{.RemoteAddr}}", "connection_id": "{{uuid}}", "timestamp": "{{timestamp}}"}'
+          delay: 500
+          template: true
+        - type: "text"
+          data: '{"message": "Hello {{randomString 8}}", "server_time": "{{datetime}}"}'
+          delay: 1000
+          template: true
+      interval: 3000  # Repeat every 3 seconds

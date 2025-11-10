@@ -6,33 +6,47 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 
 ## Features
 
+### Core Features
 - ✅ **HTTP Server**: Listens on configurable port (default: 8083)
 - ✅ **UI Dashboard**: Real-time web dashboard on port 8081 to monitor requests, matches, and responses
 - ✅ **YAML Configuration**: Define mocks in simple YAML files
 - ✅ **Hot Reloading**: Automatically reload mocks when files change
 - ✅ **Recursive Loading**: Load mock files from nested subdirectories
 - ✅ **Plugin System**: Load mocks from external git repositories
+
+### Protocol Support
+- ✅ **WebSocket Support**: Mock WebSocket connections with echo, sequence, broadcast, and custom JavaScript modes
+- ✅ **Server-Sent Events (SSE)**: Stream real-time events to clients with template and JavaScript support
+- ✅ **HTTP/2**: Automatic HTTP/2 support when using TLS
+- ✅ **HTTP/3**: QUIC-based HTTP/3 support with dual-stack mode
+- ✅ **TLS/HTTPS**: Serve mocks over HTTPS with custom certificates
+
+### Matching & Routing
 - ✅ **Advanced Matching**: Match requests by URI, HTTP Method, Headers, and Body
 - ✅ **Regex Support**: Use regular expressions for flexible matching on any field
 - ✅ **JSON Path Matching**: Use GJSON paths to match specific JSON fields in request bodies
 - ✅ **JavaScript Evaluation**: Write custom JavaScript logic for complex matching and dynamic responses
-- ✅ **Global State**: Persistent JavaScript state for stateful mock APIs (CRUD, sessions, rate limiting)
 - ✅ **Priority System**: Control which mocks match first
-- ✅ **Response Control**: Configure status codes, headers, body, and delays
+- ✅ **Scenario Mode**: Organize mocks into scenarios and switch between them dynamically
+
+### Dynamic Responses
 - ✅ **Template Responses**: Use Go templates to generate dynamic responses with access to request data
 - ✅ **Fake Data Generation**: Built-in template functions for generating realistic fake data (names, emails, UUIDs, etc.)
-- ✅ **HTTP Callbacks**: Trigger HTTP callbacks to external URLs when mocks match (webhooks)
+- ✅ **Header Templates**: Use Go templates in response headers for dynamic values
 - ✅ **Sequential Responses**: Return different responses in sequence (cycle or once mode)
-- ✅ **Request Recording**: Record real requests/responses and export as mocks
-- ✅ **Scenario Mode**: Organize mocks into scenarios and switch between them dynamically
-- ✅ **Request Validation**: Validate request bodies against JSON Schema
+- ✅ **Global State**: Persistent JavaScript state for stateful mock APIs (CRUD, sessions, rate limiting)
+
+### Testing & Reliability
 - ✅ **Chaos Engineering**: Inject random failures and latency for resilience testing
 - ✅ **Advanced Latency**: Configure random, percentile-based, or fixed latency patterns
-- ✅ **Header Templates**: Use Go templates in response headers for dynamic values
-- ✅ **CORS Auto-Configuration**: Simple flag to enable CORS for all endpoints
+- ✅ **Request Validation**: Validate request bodies against JSON Schema
 - ✅ **Mock Health Checks**: Validate mock configurations on startup
+
+### Integration & Tools
+- ✅ **HTTP Callbacks**: Trigger HTTP callbacks to external URLs when mocks match (webhooks)
+- ✅ **Request Recording**: Record real requests/responses and export as mocks
 - ✅ **Proxy Passthrough**: Forward unmatched requests to a backend server
-- ✅ **TLS Support**: Serve mocks over HTTPS with custom certificates
+- ✅ **CORS Auto-Configuration**: Simple flag to enable CORS for all endpoints
 
 ## Installation
 
@@ -1928,6 +1942,50 @@ curl -X POST http://localhost:8083/api/users \
   -d '{"name": "Jane Doe", "email": "jane@example.com"}'
 ```
 
+## Protocol Support
+
+PMP Mock HTTP now supports advanced protocols beyond standard HTTP:
+
+### WebSocket Support
+
+Mock WebSocket connections with multiple modes:
+- **Echo mode**: Echo messages back to clients
+- **Sequence mode**: Send predefined message sequences
+- **Broadcast mode**: Broadcast messages to all connected clients
+- **JavaScript mode**: Custom WebSocket logic with JavaScript
+
+See [PROTOCOLS.md](PROTOCOLS.md) for detailed WebSocket documentation and examples in `examples/websocket/`.
+
+### Server-Sent Events (SSE)
+
+Stream real-time events to clients:
+- Event sequences with customizable intervals
+- Template support for dynamic events
+- JavaScript mode for custom event generation
+- Keep-alive and retry configuration
+
+See [PROTOCOLS.md](PROTOCOLS.md) for detailed SSE documentation and examples in `examples/sse/`.
+
+### HTTP/2 & HTTP/3
+
+Advanced HTTP protocol support:
+- **HTTP/2**: Automatically enabled with TLS
+- **HTTP/3**: QUIC-based protocol for improved performance
+- **Dual-stack mode**: Run both HTTP/2 and HTTP/3 simultaneously
+
+```bash
+# Enable HTTP/2 (automatic with TLS)
+./pmp-mock-http --tls --tls-cert cert.pem --tls-key key.pem
+
+# Enable HTTP/3
+./pmp-mock-http --http3 --tls --tls-cert cert.pem --tls-key key.pem
+
+# Enable dual-stack (HTTP/2 + HTTP/3)
+./pmp-mock-http --dual-stack --tls --tls-cert cert.pem --tls-key key.pem
+```
+
+See [PROTOCOLS.md](PROTOCOLS.md) for detailed protocol documentation.
+
 ## Examples
 
 The `mocks/` directory contains several example files demonstrating various features:
@@ -1938,6 +1996,11 @@ The `mocks/` directory contains several example files demonstrating various feat
 - `javascript-examples.yaml`: JavaScript evaluation examples
 - `stateful-examples.yaml`: Global state and stateful API simulations (CRUD, sessions, rate limiting)
 - `apis/external-service.yaml`: Examples in a subdirectory
+
+The `examples/` directory contains protocol-specific examples:
+
+- `examples/websocket/`: WebSocket mock examples (echo, sequence, broadcast, JavaScript)
+- `examples/sse/`: Server-Sent Events examples (simple, real-time, notifications, templates)
 
 ## Development
 
@@ -1959,6 +2022,8 @@ go run main.go
 - [yaml.v3](https://gopkg.in/yaml.v3) - YAML parsing
 - [gjson](https://github.com/tidwall/gjson) - JSON path matching
 - [goja](https://github.com/dop251/goja) - JavaScript runtime for Go
+- [gorilla/websocket](https://github.com/gorilla/websocket) - WebSocket protocol support
+- [quic-go](https://github.com/quic-go/quic-go) - HTTP/3 and QUIC protocol support
 
 ## License
 

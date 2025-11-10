@@ -1,0 +1,25 @@
+mocks:
+  - name: "WebSocket Sequence Demo"
+    protocol: "websocket"
+    priority: 10
+    request:
+      uri: "/ws/sequence"
+      method: "GET"
+    websocket:
+      mode: "sequence"
+      on_connect: "Connection established. Sending sequence..."
+      messages:
+        - type: "text"
+          data: '{"status": "connecting", "message": "Initializing connection..."}'
+          delay: 0
+        - type: "text"
+          data: '{"status": "processing", "message": "Processing your request..."}'
+          delay: 1000
+        - type: "text"
+          data: '{"status": "ready", "message": "Ready to receive data"}'
+          delay: 2000
+        - type: "text"
+          data: '{"status": "complete", "message": "All systems operational"}'
+          delay: 1000
+      interval: 500
+      close_after: 0  # Keep connection open after sequence

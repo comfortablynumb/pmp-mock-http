@@ -1,0 +1,46 @@
+mocks:
+  - name: "WebSocket JavaScript Handler"
+    protocol: "websocket"
+    priority: 10
+    request:
+      uri: "/ws/custom"
+      method: "GET"
+    websocket:
+      mode: "javascript"
+      javascript: |
+        (function() {
+          console.log("WebSocket connection initialized");
+
+          // Send welcome message
+          connection.send("Welcome! Send 'time' for current time, 'echo:text' to echo, 'close' to disconnect");
+
+          // Counter for messages
+          var messageCount = 0;
+
+          // Handle incoming messages
+          onMessage(function(message) {
+            messageCount++;
+            console.log("Received message #" + messageCount + ": " + message);
+
+            if (message === "time") {
+              var now = new Date().toISOString();
+              connection.sendJSON({
+                type: "time",
+                timestamp: now,
+                count: messageCount
+              });
+            } else if (message.startsWith("echo:")) {
+              var text = message.substring(5);
+              connection.send("Echo: " + text);
+            } else if (message === "close") {
+              connection.send("Goodbye!");
+              connection.close();
+            } else {
+              connection.sendJSON({
+                type: "info",
+                message: "Unknown command. Try: time, echo:text, or close",
+                received: message
+              });
+            }
+          });
+        })();

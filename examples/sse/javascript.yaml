@@ -1,0 +1,41 @@
+mocks:
+  - name: "SSE with JavaScript"
+    protocol: "sse"
+    priority: 10
+    request:
+      uri: "/sse/js"
+      method: "GET"
+    sse:
+      javascript: |
+        (function() {
+          console.log("SSE stream started for", request.remoteAddr);
+
+          // Send initial connection event
+          sse.sendEvent("connected", JSON.stringify({
+            message: "Stream established",
+            client: request.remoteAddr,
+            timestamp: new Date().toISOString()
+          }), "conn-1", 0);
+
+          // Send periodic updates
+          for (var i = 1; i <= 10; i++) {
+            sleep(1000);  // Wait 1 second
+
+            var data = {
+              iteration: i,
+              timestamp: new Date().toISOString(),
+              random: Math.floor(Math.random() * 100)
+            };
+
+            sse.sendEvent("update", JSON.stringify(data), "update-" + i, 0);
+          }
+
+          // Send completion event
+          sleep(500);
+          sse.sendEvent("complete", JSON.stringify({
+            message: "Stream complete",
+            total_events: 10
+          }), "done", 0);
+
+          console.log("SSE stream completed");
+        })();

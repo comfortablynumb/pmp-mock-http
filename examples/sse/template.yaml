@@ -1,0 +1,25 @@
+mocks:
+  - name: "SSE with Templates"
+    protocol: "sse"
+    priority: 10
+    request:
+      uri: "/sse/dynamic"
+      method: "GET"
+    sse:
+      template: true
+      events:
+        - event: "connection"
+          data: '{"client": "{{.RemoteAddr}}", "time": "{{now}}", "id": "{{uuid}}"}'
+          delay: 0
+          template: true
+        - event: "data"
+          data: '{"random_string": "{{randomString 10}}", "random_int": {{randomInt 100 1000}}, "timestamp": "{{timestamp}}"}'
+          delay: 1000
+          template: true
+        - event: "data"
+          data: '{"user": "{{firstName}} {{lastName}}", "email": "{{email}}", "company": "{{company}}"}'
+          delay: 1000
+          template: true
+      mode: "cycle"
+      interval: 2000
+      keep_alive: 10000
