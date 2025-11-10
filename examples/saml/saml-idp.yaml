@@ -1,0 +1,96 @@
+mocks:
+  # SAML SSO Endpoint (SP-Initiated)
+  - name: "SAML SSO Endpoint"
+    priority: 100
+    request:
+      uri: "/saml/sso"
+      method: "GET"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "text/html"
+      body: |
+        <!DOCTYPE html>
+        <html>
+        <head><title>SAML SSO</title></head>
+        <body onload="document.forms[0].submit()">
+          <form method="post" action="http://localhost:8080/saml/acs">
+            <input type="hidden" name="SAMLResponse" value="{{randomString 512}}"/>
+            <input type="hidden" name="RelayState" value="{{.URI}}"/>
+            <noscript>
+              <p>JavaScript is disabled. Click Continue.</p>
+              <button type="submit">Continue</button>
+            </noscript>
+          </form>
+        </body>
+        </html>
+
+  # SAML Metadata Endpoint
+  - name: "SAML IdP Metadata"
+    priority: 100
+    request:
+      uri: "/saml/metadata"
+      method: "GET"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/xml"
+      body: |
+        <?xml version="1.0"?>
+        <EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                          entityID="http://localhost:8083/saml">
+          <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+              <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                <X509Data>
+                  <X509Certificate>MIIDXTCCAkWgAwIBAgIJAKL0UG+mRK...</X509Certificate>
+                </X509Data>
+              </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+                                 Location="http://localhost:8083/saml/sso"/>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="http://localhost:8083/saml/sso"/>
+          </IDPSSODescriptor>
+        </EntityDescriptor>
+
+  # SAML Logout Endpoint
+  - name: "SAML Logout"
+    priority: 100
+    request:
+      uri: "/saml/logout"
+      method: "GET"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "status": "logged_out",
+          "message": "Successfully logged out"
+        }
+
+  # SAML Assertion Consumer Service (for testing)
+  - name: "SAML ACS Test Endpoint"
+    priority: 90
+    request:
+      uri: "/saml/acs"
+      method: "POST"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "status": "success",
+          "message": "SAML assertion received",
+          "user": {
+            "nameId": "user@example.com",
+            "attributes": {
+              "email": "user@example.com",
+              "firstName": "Mock",
+              "lastName": "User",
+              "role": "user"
+            }
+          }
+        }

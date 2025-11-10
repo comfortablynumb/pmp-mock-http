@@ -48,6 +48,11 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 - ✅ **Proxy Passthrough**: Forward unmatched requests to a backend server
 - ✅ **CORS Auto-Configuration**: Simple flag to enable CORS for all endpoints
 
+### Authentication & API Integration
+- ✅ **OpenAPI/Swagger Import**: Auto-generate mocks from OpenAPI 3.x and Swagger 2.0 specifications
+- ✅ **OAuth2/OpenID Connect**: Complete OAuth2 server simulation with JWT tokens, all grant types, and OIDC
+- ✅ **SAML/SSO Mocking**: SAML 2.0 Identity Provider with SP-initiated and IdP-initiated flows
+
 ## Installation
 
 ### From Source
@@ -2001,6 +2006,51 @@ The `examples/` directory contains protocol-specific examples:
 
 - `examples/websocket/`: WebSocket mock examples (echo, sequence, broadcast, JavaScript)
 - `examples/sse/`: Server-Sent Events examples (simple, real-time, notifications, templates)
+- `examples/oauth/`: OAuth2 and OpenID Connect server examples
+- `examples/saml/`: SAML 2.0 Identity Provider examples
+
+## Authentication & API Integration
+
+PMP Mock HTTP now includes powerful features for testing authentication and importing API specifications:
+
+### OpenAPI/Swagger Import
+
+Auto-generate mock configurations from OpenAPI 3.x and Swagger 2.0 specifications:
+
+```bash
+# Build the import tool
+go build -o pmp-import ./cmd/import
+
+# Import from file
+./pmp-import --input api-spec.yaml --output mocks/api.yaml
+
+# Import from URL
+./pmp-import --input https://api.example.com/openapi.json --output mocks/api.yaml
+```
+
+### OAuth2/OpenID Connect
+
+Complete OAuth2 server simulation with all grant types:
+- Authorization Code Flow (with PKCE support)
+- Client Credentials Flow
+- Implicit Flow
+- Password Grant Flow
+- Refresh Token Flow
+- OpenID Connect (ID tokens, userinfo endpoint, discovery)
+
+See `examples/oauth/` for ready-to-use OAuth2 server mocks.
+
+### SAML/SSO
+
+SAML 2.0 Identity Provider simulation:
+- SP-initiated SSO flow
+- IdP-initiated SSO flow
+- SAML metadata endpoint
+- Signed assertions with auto-generated certificates
+
+See `examples/saml/` for ready-to-use SAML IdP mocks.
+
+**For detailed documentation, see [AUTHENTICATION.md](AUTHENTICATION.md)**
 
 ## Development
 
