@@ -1,0 +1,25 @@
+mocks:
+  - name: "Real-time Data Stream"
+    protocol: "sse"
+    priority: 10
+    request:
+      uri: "/sse/realtime"
+      method: "GET"
+    sse:
+      events:
+        - event: "price"
+          data: '{"symbol": "AAPL", "price": 150.25, "change": +0.5}'
+          delay: 0
+        - event: "price"
+          data: '{"symbol": "GOOGL", "price": 2800.50, "change": -1.2}'
+          delay: 500
+        - event: "price"
+          data: '{"symbol": "MSFT", "price": 310.75, "change": +2.1}'
+          delay: 500
+        - event: "price"
+          data: '{"symbol": "AAPL", "price": 150.50, "change": +0.75}'
+          delay: 500
+      mode: "cycle"      # Keep cycling through events
+      interval: 1000     # 1 second between events
+      keep_alive: 15000  # Send keep-alive comment every 15 seconds
+      retry: 5000

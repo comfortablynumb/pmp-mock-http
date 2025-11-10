@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,8 +17,11 @@ import (
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
 	"github.com/comfortablynumb/pmp-mock-http/internal/proxy"
 	"github.com/comfortablynumb/pmp-mock-http/internal/recorder"
+	"github.com/comfortablynumb/pmp-mock-http/internal/sse"
 	"github.com/comfortablynumb/pmp-mock-http/internal/template"
 	"github.com/comfortablynumb/pmp-mock-http/internal/tracker"
+	"github.com/comfortablynumb/pmp-mock-http/internal/websocket"
+	"github.com/quic-go/quic-go/http3"
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,6 +43,8 @@ type Server struct {
 	proxyClient      *proxy.Client
 	recorder         *recorder.Recorder
 	corsConfig       *CORSConfig
+	wsHandlers       map[string]*websocket.Handler // Cache WebSocket handlers by mock name
+	sseHandlers      map[string]*sse.Handler       // Cache SSE handlers by mock name
 	mu               sync.RWMutex
 }
 
@@ -62,6 +68,8 @@ func NewServer(port int, mocks []models.Mock, proxyConfig *proxy.Config, corsCon
 		proxyClient:      proxyClient,
 		recorder:         recorder.NewRecorder(),
 		corsConfig:       corsConfig,
+		wsHandlers:       make(map[string]*websocket.Handler),
+		sseHandlers:      make(map[string]*sse.Handler),
 	}
 }
 
@@ -85,6 +93,8 @@ func NewServerWithTracker(port int, mocks []models.Mock, t *tracker.Tracker, pro
 		proxyClient:      proxyClient,
 		recorder:         recorder.NewRecorder(),
 		corsConfig:       corsConfig,
+		wsHandlers:       make(map[string]*websocket.Handler),
+		sseHandlers:      make(map[string]*sse.Handler),
 	}
 }
 
@@ -111,7 +121,7 @@ func (s *Server) Start() error {
 	return http.ListenAndServe(addr, nil)
 }
 
-// StartTLS starts the HTTPS server with TLS
+// StartTLS starts the HTTPS server with TLS and HTTP/2 support
 func (s *Server) StartTLS(certFile, keyFile string) error {
 	http.HandleFunc("/", s.handleRequest)
 
@@ -129,9 +139,89 @@ func (s *Server) StartTLS(certFile, keyFile string) error {
 	http.HandleFunc("/__scenario/set", s.handleScenarioSet)
 
 	addr := fmt.Sprintf(":%d", s.port)
-	log.Printf("Mock server listening on https://localhost%s (TLS enabled)\n", addr)
+	log.Printf("Mock server listening on https://localhost%s (TLS with HTTP/2 enabled)\n", addr)
 
-	return http.ListenAndServeTLS(addr, certFile, keyFile, nil)
+	// Create server with explicit HTTP/2 support
+	server := &http.Server{
+		Addr:         addr,
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)), // Enable HTTP/2
+	}
+
+	return server.ListenAndServeTLS(certFile, keyFile)
+}
+
+// StartHTTP3 starts the HTTP/3 server with QUIC
+func (s *Server) StartHTTP3(certFile, keyFile string) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleRequest)
+
+	// Register recording control endpoints
+	mux.HandleFunc("/__recording/start", s.handleRecordingStart)
+	mux.HandleFunc("/__recording/stop", s.handleRecordingStop)
+	mux.HandleFunc("/__recording/status", s.handleRecordingStatus)
+	mux.HandleFunc("/__recording/clear", s.handleRecordingClear)
+	mux.HandleFunc("/__recording/export", s.handleRecordingExport)
+	mux.HandleFunc("/__recording/list", s.handleRecordingList)
+
+	// Register scenario control endpoints
+	mux.HandleFunc("/__scenario/list", s.handleScenarioList)
+	mux.HandleFunc("/__scenario/active", s.handleScenarioActive)
+	mux.HandleFunc("/__scenario/set", s.handleScenarioSet)
+
+	addr := fmt.Sprintf(":%d", s.port)
+	log.Printf("Mock server listening on https://localhost%s (HTTP/3 with QUIC enabled)\n", addr)
+
+	// Create HTTP/3 server
+	server := &http3.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	return server.ListenAndServeTLS(certFile, keyFile)
+}
+
+// StartDualStack starts both HTTP/2 (TLS) and HTTP/3 (QUIC) servers on the same port
+func (s *Server) StartDualStack(certFile, keyFile string) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleRequest)
+
+	// Register recording control endpoints
+	mux.HandleFunc("/__recording/start", s.handleRecordingStart)
+	mux.HandleFunc("/__recording/stop", s.handleRecordingStop)
+	mux.HandleFunc("/__recording/status", s.handleRecordingStatus)
+	mux.HandleFunc("/__recording/clear", s.handleRecordingClear)
+	mux.HandleFunc("/__recording/export", s.handleRecordingExport)
+	mux.HandleFunc("/__recording/list", s.handleRecordingList)
+
+	// Register scenario control endpoints
+	mux.HandleFunc("/__scenario/list", s.handleScenarioList)
+	mux.HandleFunc("/__scenario/active", s.handleScenarioActive)
+	mux.HandleFunc("/__scenario/set", s.handleScenarioSet)
+
+	addr := fmt.Sprintf(":%d", s.port)
+	log.Printf("Mock server listening on https://localhost%s (HTTP/2 + HTTP/3 dual-stack)\n", addr)
+
+	// Create HTTP/3 server
+	http3Server := &http3.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	// Start HTTP/3 server in background
+	go func() {
+		if err := http3Server.ListenAndServeTLS(certFile, keyFile); err != nil {
+			log.Printf("HTTP/3 server error: %v\n", err)
+		}
+	}()
+
+	// Create and start HTTP/2 server (also serves HTTP/1.1)
+	http2Server := &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)), // Enable HTTP/2
+	}
+
+	return http2Server.ListenAndServeTLS(certFile, keyFile)
 }
 
 // handleRequest handles incoming HTTP requests
@@ -239,6 +329,20 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Matched mock: %s\n", mock.Name)
+
+	// Handle WebSocket protocol
+	if mock.Protocol == "websocket" {
+		log.Printf("Handling WebSocket connection for mock: %s\n", mock.Name)
+		s.handleWebSocket(w, r, mock)
+		return
+	}
+
+	// Handle SSE protocol
+	if mock.Protocol == "sse" {
+		log.Printf("Handling SSE stream for mock: %s\n", mock.Name)
+		s.handleSSE(w, r, mock)
+		return
+	}
 
 	// Create request data for templates and callbacks
 	requestData := template.NewRequestData(r, string(bodyBytes))
@@ -629,4 +733,74 @@ func (s *Server) renderHeaderTemplates(headers map[string]string, useTemplates b
 		}
 	}
 	return rendered
+}
+
+// handleWebSocket handles WebSocket connections
+func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request, mock *models.Mock) {
+	// Get or create WebSocket handler for this mock
+	handler, exists := s.wsHandlers[mock.Name]
+	if !exists {
+		handler = websocket.NewHandler(mock, s.templateRenderer)
+		s.wsHandlers[mock.Name] = handler
+	}
+
+	// Track the connection attempt
+	if s.tracker != nil {
+		headers := make(map[string]string)
+		for key, values := range r.Header {
+			if len(values) > 0 {
+				headers[key] = values[0]
+			}
+		}
+		s.tracker.Log(tracker.RequestLog{
+			Method:     r.Method,
+			URI:        r.URL.RequestURI(),
+			Headers:    headers,
+			Body:       "",
+			Matched:    true,
+			MockName:   mock.Name + " (websocket)",
+			MockConfig: mock,
+			StatusCode: 101, // Switching Protocols
+			Response:   "WebSocket connection established",
+			RemoteAddr: r.RemoteAddr,
+		})
+	}
+
+	// Handle the WebSocket connection
+	handler.HandleConnection(w, r)
+}
+
+// handleSSE handles Server-Sent Events streams
+func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, mock *models.Mock) {
+	// Get or create SSE handler for this mock
+	handler, exists := s.sseHandlers[mock.Name]
+	if !exists {
+		handler = sse.NewHandler(mock, s.templateRenderer)
+		s.sseHandlers[mock.Name] = handler
+	}
+
+	// Track the SSE stream
+	if s.tracker != nil {
+		headers := make(map[string]string)
+		for key, values := range r.Header {
+			if len(values) > 0 {
+				headers[key] = values[0]
+			}
+		}
+		s.tracker.Log(tracker.RequestLog{
+			Method:     r.Method,
+			URI:        r.URL.RequestURI(),
+			Headers:    headers,
+			Body:       "",
+			Matched:    true,
+			MockName:   mock.Name + " (sse)",
+			MockConfig: mock,
+			StatusCode: 200,
+			Response:   "SSE stream established",
+			RemoteAddr: r.RemoteAddr,
+		})
+	}
+
+	// Handle the SSE stream
+	handler.HandleStream(w, r)
 }

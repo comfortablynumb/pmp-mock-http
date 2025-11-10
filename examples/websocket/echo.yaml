@@ -1,0 +1,11 @@
+mocks:
+  - name: "WebSocket Echo Server"
+    protocol: "websocket"
+    priority: 10
+    request:
+      uri: "/ws/echo"
+      method: "GET"
+    websocket:
+      mode: "echo"
+      on_connect: "Welcome to the echo server! Send me a message."
+      template: false

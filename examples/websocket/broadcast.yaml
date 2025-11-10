@@ -1,0 +1,11 @@
+mocks:
+  - name: "WebSocket Chat Room (Broadcast)"
+    protocol: "websocket"
+    priority: 10
+    request:
+      uri: "/ws/chat"
+      method: "GET"
+    websocket:
+      mode: "broadcast"
+      on_connect: '{"type": "system", "message": "You joined the chat room"}'
+      max_connections: 100  # Limit to 100 concurrent connections

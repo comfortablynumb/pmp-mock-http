@@ -1,0 +1,27 @@
+mocks:
+  - name: "Simple SSE Stream"
+    protocol: "sse"
+    priority: 10
+    request:
+      uri: "/sse/simple"
+      method: "GET"
+    sse:
+      events:
+        - event: "message"
+          data: '{"status": "started", "message": "Stream initiated"}'
+          id: "1"
+          delay: 0
+        - event: "update"
+          data: '{"status": "processing", "progress": 50}'
+          id: "2"
+          delay: 1000
+        - event: "update"
+          data: '{"status": "processing", "progress": 75}'
+          id: "3"
+          delay: 1000
+        - event: "complete"
+          data: '{"status": "done", "progress": 100}'
+          id: "4"
+          delay: 1000
+      mode: "once"  # Send events once and close
+      retry: 3000   # Client should retry after 3 seconds if disconnected
