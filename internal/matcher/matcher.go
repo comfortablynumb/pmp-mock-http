@@ -19,6 +19,8 @@ type Matcher struct {
 	globalVM    *goja.Runtime         // Persistent JS runtime for global state
 	globalState map[string]interface{} // Global state shared across JavaScript evaluations
 	stateMu     sync.RWMutex           // Mutex to protect global state
+	callCounts  map[string]int         // Track call counts for sequence responses
+	countMu     sync.Mutex             // Mutex to protect call counts
 }
 
 // NewMatcher creates a new request matcher
@@ -42,6 +44,7 @@ func NewMatcher(mocks []models.Mock) *Matcher {
 		mocks:       sortedMocks,
 		globalVM:    globalVM,
 		globalState: make(map[string]interface{}),
+		callCounts:  make(map[string]int),
 	}
 }
 
@@ -65,6 +68,9 @@ func (m *Matcher) FindMatch(r *http.Request) (*models.Mock, error) {
 				// If JavaScript returned a custom response, use it
 				if customResponse != nil {
 					matchedMock.Response = *customResponse
+				} else {
+					// Use sequential response if defined
+					matchedMock.Response = m.getSequentialResponse(&mock)
 				}
 				return &matchedMock, nil
 			}
@@ -73,7 +79,11 @@ func (m *Matcher) FindMatch(r *http.Request) (*models.Mock, error) {
 
 		// Standard matching
 		if m.matches(r, bodyStr, &mock) {
-			return &mock, nil
+			// Create a copy of the mock
+			matchedMock := mock
+			// Get sequential response if defined
+			matchedMock.Response = m.getSequentialResponse(&mock)
+			return &matchedMock, nil
 		}
 	}
 
@@ -194,6 +204,12 @@ func (m *Matcher) UpdateMocks(mocks []models.Mock) {
 	})
 
 	m.mocks = sortedMocks
+
+	// Reset call counts when mocks are updated
+	m.countMu.Lock()
+	m.callCounts = make(map[string]int)
+	m.countMu.Unlock()
+
 	// Note: We intentionally do NOT reset globalState here
 	// This allows state to persist across mock file reloads
 }
@@ -312,4 +328,50 @@ func (m *Matcher) evaluateJavaScript(r *http.Request, body string, script string
 	}
 
 	return false, nil
+}
+
+// getSequentialResponse returns the appropriate response based on the sequence and call count
+func (m *Matcher) getSequentialResponse(mock *models.Mock) models.Response {
+	// If no sequence is defined, return the default response
+	if len(mock.Response.Sequence) == 0 {
+		return mock.Response
+	}
+
+	// Get and increment call count
+	m.countMu.Lock()
+	callCount := m.callCounts[mock.Name]
+	m.callCounts[mock.Name] = callCount + 1
+	m.countMu.Unlock()
+
+	// Determine which response to return
+	sequenceLen := len(mock.Response.Sequence)
+	var responseIndex int
+
+	// Default mode is "cycle"
+	mode := mock.Response.SequenceMode
+	if mode == "" {
+		mode = "cycle"
+	}
+
+	if mode == "once" {
+		// Stop at the last response
+		responseIndex = callCount
+		if responseIndex >= sequenceLen {
+			responseIndex = sequenceLen - 1
+		}
+	} else {
+		// Cycle through responses
+		responseIndex = callCount % sequenceLen
+	}
+
+	// Build the response from the sequence item
+	item := mock.Response.Sequence[responseIndex]
+	return models.Response{
+		StatusCode: item.StatusCode,
+		Headers:    item.Headers,
+		Body:       item.Body,
+		Delay:      item.Delay,
+		Template:   item.Template,
+		Callback:   item.Callback,
+	}
 }

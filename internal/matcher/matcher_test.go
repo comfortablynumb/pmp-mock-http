@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -974,4 +975,267 @@ func createRequest(method, uri string, headers map[string]string, body []byte) *
 	}
 
 	return req
+}
+
+func TestSequentialResponsesCycle(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "Sequential Test",
+			Request: models.Request{
+				URI:    "/api/test",
+				Method: "GET",
+			},
+			Response: models.Response{
+				Sequence: []models.ResponseItem{
+					{StatusCode: 200, Body: "first"},
+					{StatusCode: 200, Body: "second"},
+					{StatusCode: 200, Body: "third"},
+				},
+				SequenceMode: "cycle",
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// First call
+	req1 := httptest.NewRequest("GET", "/api/test", nil)
+	mock1, err := matcher.FindMatch(req1)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock1 == nil {
+		t.Fatal("Expected mock to match")
+	}
+	if mock1.Response.Body != "first" {
+		t.Errorf("Expected 'first', got '%s'", mock1.Response.Body)
+	}
+
+	// Second call
+	req2 := httptest.NewRequest("GET", "/api/test", nil)
+	mock2, err := matcher.FindMatch(req2)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock2.Response.Body != "second" {
+		t.Errorf("Expected 'second', got '%s'", mock2.Response.Body)
+	}
+
+	// Third call
+	req3 := httptest.NewRequest("GET", "/api/test", nil)
+	mock3, err := matcher.FindMatch(req3)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock3.Response.Body != "third" {
+		t.Errorf("Expected 'third', got '%s'", mock3.Response.Body)
+	}
+
+	// Fourth call - should cycle back to first
+	req4 := httptest.NewRequest("GET", "/api/test", nil)
+	mock4, err := matcher.FindMatch(req4)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock4.Response.Body != "first" {
+		t.Errorf("Expected 'first' (cycling), got '%s'", mock4.Response.Body)
+	}
+}
+
+func TestSequentialResponsesOnce(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "Sequential Once Test",
+			Request: models.Request{
+				URI:    "/api/once",
+				Method: "GET",
+			},
+			Response: models.Response{
+				Sequence: []models.ResponseItem{
+					{StatusCode: 201, Body: "first"},
+					{StatusCode: 200, Body: "second"},
+					{StatusCode: 200, Body: "third"},
+				},
+				SequenceMode: "once",
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// First call
+	req1 := httptest.NewRequest("GET", "/api/once", nil)
+	mock1, err := matcher.FindMatch(req1)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock1.Response.StatusCode != 201 {
+		t.Errorf("Expected status 201, got %d", mock1.Response.StatusCode)
+	}
+	if mock1.Response.Body != "first" {
+		t.Errorf("Expected 'first', got '%s'", mock1.Response.Body)
+	}
+
+	// Second call
+	req2 := httptest.NewRequest("GET", "/api/once", nil)
+	mock2, err := matcher.FindMatch(req2)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock2.Response.Body != "second" {
+		t.Errorf("Expected 'second', got '%s'", mock2.Response.Body)
+	}
+
+	// Third call
+	req3 := httptest.NewRequest("GET", "/api/once", nil)
+	mock3, err := matcher.FindMatch(req3)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock3.Response.Body != "third" {
+		t.Errorf("Expected 'third', got '%s'", mock3.Response.Body)
+	}
+
+	// Fourth call - should stay at last response
+	req4 := httptest.NewRequest("GET", "/api/once", nil)
+	mock4, err := matcher.FindMatch(req4)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock4.Response.Body != "third" {
+		t.Errorf("Expected 'third' (staying at last), got '%s'", mock4.Response.Body)
+	}
+
+	// Fifth call - should still be at last response
+	req5 := httptest.NewRequest("GET", "/api/once", nil)
+	mock5, err := matcher.FindMatch(req5)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock5.Response.Body != "third" {
+		t.Errorf("Expected 'third' (staying at last), got '%s'", mock5.Response.Body)
+	}
+}
+
+func TestSequentialResponsesWithHeaders(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "Sequential with Headers",
+			Request: models.Request{
+				URI:    "/api/headers",
+				Method: "GET",
+			},
+			Response: models.Response{
+				Sequence: []models.ResponseItem{
+					{
+						StatusCode: 200,
+						Headers:    map[string]string{"X-Step": "1"},
+						Body:       "step1",
+					},
+					{
+						StatusCode: 200,
+						Headers:    map[string]string{"X-Step": "2"},
+						Body:       "step2",
+					},
+				},
+				SequenceMode: "cycle",
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// First call
+	req1 := httptest.NewRequest("GET", "/api/headers", nil)
+	mock1, err := matcher.FindMatch(req1)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock1.Response.Headers["X-Step"] != "1" {
+		t.Errorf("Expected header X-Step=1, got %s", mock1.Response.Headers["X-Step"])
+	}
+
+	// Second call
+	req2 := httptest.NewRequest("GET", "/api/headers", nil)
+	mock2, err := matcher.FindMatch(req2)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock2.Response.Headers["X-Step"] != "2" {
+		t.Errorf("Expected header X-Step=2, got %s", mock2.Response.Headers["X-Step"])
+	}
+}
+
+func TestNoSequenceUsesDefaultResponse(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "No Sequence",
+			Request: models.Request{
+				URI:    "/api/normal",
+				Method: "GET",
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       "default response",
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// Multiple calls should all return the same default response
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest("GET", "/api/normal", nil)
+		mock, err := matcher.FindMatch(req)
+		if err != nil {
+			t.Fatalf("FindMatch error: %v", err)
+		}
+		if mock.Response.Body != "default response" {
+			t.Errorf("Call %d: Expected 'default response', got '%s'", i+1, mock.Response.Body)
+		}
+	}
+}
+
+func TestSequenceResetOnMockUpdate(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name: "Sequential Test",
+			Request: models.Request{
+				URI:    "/api/test",
+				Method: "GET",
+			},
+			Response: models.Response{
+				Sequence: []models.ResponseItem{
+					{StatusCode: 200, Body: "first"},
+					{StatusCode: 200, Body: "second"},
+				},
+				SequenceMode: "cycle",
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// First call
+	req1 := httptest.NewRequest("GET", "/api/test", nil)
+	mock1, err := matcher.FindMatch(req1)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock1.Response.Body != "first" {
+		t.Errorf("Expected 'first', got '%s'", mock1.Response.Body)
+	}
+
+	// Update mocks (simulating hot reload)
+	matcher.UpdateMocks(mocks)
+
+	// After update, sequence should reset to first
+	req2 := httptest.NewRequest("GET", "/api/test", nil)
+	mock2, err := matcher.FindMatch(req2)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock2.Response.Body != "first" {
+		t.Errorf("Expected 'first' (after reset), got '%s'", mock2.Response.Body)
+	}
 }

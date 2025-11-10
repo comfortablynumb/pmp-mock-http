@@ -1,0 +1,107 @@
+mocks:
+  # Sequential responses with cycle mode (default)
+  - name: "Sequential Response - Cycle"
+    priority: 10
+    request:
+      uri: "/api/sequence/cycle"
+      method: "GET"
+    response:
+      sequence:
+        - status_code: 200
+          body: '{"response": "first"}'
+        - status_code: 200
+          body: '{"response": "second"}'
+        - status_code: 200
+          body: '{"response": "third"}'
+      sequence_mode: "cycle"
+
+  # Sequential responses with once mode (stops at last)
+  - name: "Sequential Response - Once"
+    priority: 10
+    request:
+      uri: "/api/sequence/once"
+      method: "GET"
+    response:
+      sequence:
+        - status_code: 201
+          headers:
+            X-Sequence: "first"
+          body: '{"status": "initializing"}'
+        - status_code: 200
+          headers:
+            X-Sequence: "second"
+          body: '{"status": "processing"}'
+        - status_code: 200
+          headers:
+            X-Sequence: "third"
+          body: '{"status": "completed"}'
+      sequence_mode: "once"
+
+  # Sequential with different status codes
+  - name: "Sequential Status Codes"
+    priority: 10
+    request:
+      uri: "/api/task/status"
+      method: "GET"
+    response:
+      sequence:
+        - status_code: 202
+          body: '{"status": "accepted"}'
+        - status_code: 102
+          body: '{"status": "processing"}'
+        - status_code: 200
+          body: '{"status": "done", "result": "success"}'
+      sequence_mode: "once"
+
+  # Sequential with delays
+  - name: "Sequential with Delays"
+    priority: 10
+    request:
+      uri: "/api/delayed/sequence"
+      method: "POST"
+    response:
+      sequence:
+        - status_code: 200
+          body: '{"step": 1}'
+          delay: 100
+        - status_code: 200
+          body: '{"step": 2}'
+          delay: 200
+        - status_code: 200
+          body: '{"step": 3}'
+          delay: 300
+      sequence_mode: "cycle"
+
+  # Sequential with templates
+  - name: "Sequential with Templates"
+    priority: 10
+    request:
+      uri: "/api/users/random"
+      method: "GET"
+    response:
+      sequence:
+        - status_code: 200
+          template: true
+          body: |
+            {
+              "user": "{{ fullName }}",
+              "email": "{{ email }}",
+              "sequence": 1
+            }
+        - status_code: 200
+          template: true
+          body: |
+            {
+              "user": "{{ fullName }}",
+              "email": "{{ email }}",
+              "sequence": 2
+            }
+        - status_code: 200
+          template: true
+          body: |
+            {
+              "user": "{{ fullName }}",
+              "email": "{{ email }}",
+              "sequence": 3
+            }
+      sequence_mode: "cycle"

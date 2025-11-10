@@ -41,12 +41,24 @@ type JSONPathMatcher struct {
 
 // Response defines what to return when a request matches
 type Response struct {
+	StatusCode   int               `yaml:"status_code"`
+	Headers      map[string]string `yaml:"headers"`
+	Body         string            `yaml:"body"`
+	Delay        int               `yaml:"delay"`        // Response delay in milliseconds
+	Template     bool              `yaml:"template"`     // If true, body is a Go template
+	Callback     *Callback         `yaml:"callback"`     // Optional callback to trigger
+	Sequence     []ResponseItem    `yaml:"sequence"`     // Sequential responses
+	SequenceMode string            `yaml:"sequence_mode"` // "cycle" or "once" (default: cycle)
+}
+
+// ResponseItem represents a single response in a sequence
+type ResponseItem struct {
 	StatusCode int               `yaml:"status_code"`
 	Headers    map[string]string `yaml:"headers"`
 	Body       string            `yaml:"body"`
-	Delay      int               `yaml:"delay"`    // Response delay in milliseconds
-	Template   bool              `yaml:"template"` // If true, body is a Go template
-	Callback   *Callback         `yaml:"callback"` // Optional callback to trigger
+	Delay      int               `yaml:"delay"`
+	Template   bool              `yaml:"template"`
+	Callback   *Callback         `yaml:"callback"`
 }
 
 // Callback defines an HTTP callback to trigger when a mock matches
