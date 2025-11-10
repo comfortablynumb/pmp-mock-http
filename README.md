@@ -26,6 +26,11 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 - ✅ **Request Recording**: Record real requests/responses and export as mocks
 - ✅ **Scenario Mode**: Organize mocks into scenarios and switch between them dynamically
 - ✅ **Request Validation**: Validate request bodies against JSON Schema
+- ✅ **Chaos Engineering**: Inject random failures and latency for resilience testing
+- ✅ **Advanced Latency**: Configure random, percentile-based, or fixed latency patterns
+- ✅ **Header Templates**: Use Go templates in response headers for dynamic values
+- ✅ **CORS Auto-Configuration**: Simple flag to enable CORS for all endpoints
+- ✅ **Mock Health Checks**: Validate mock configurations on startup
 - ✅ **Proxy Passthrough**: Forward unmatched requests to a backend server
 - ✅ **TLS Support**: Serve mocks over HTTPS with custom certificates
 
@@ -826,6 +831,358 @@ mocks:
 - **Development feedback**: Get immediate validation errors during development
 
 More examples available in `mocks/validation-examples.yaml`.
+
+### Chaos Engineering
+
+Test your application's resilience by injecting random failures and latency. Perfect for testing error handling, retry logic, circuit breakers, and system reliability.
+
+#### Basic Chaos Configuration
+
+Add a `chaos` field to inject random failures:
+
+```yaml
+mocks:
+  - name: "User API with Chaos"
+    request:
+      uri: "/api/users/123"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"id": 123, "name": "John Doe"}'
+      chaos:
+        enabled: true
+        failure_rate: 0.3  # 30% chance of failure
+        error_codes: [500, 503, 504]
+```
+
+#### Chaos with Latency Injection
+
+Combine failures with variable latency:
+
+```yaml
+mocks:
+  - name: "Payment API with Chaos"
+    request:
+      uri: "/api/payments"
+      method: "POST"
+    response:
+      status_code: 200
+      body: '{"status": "success"}'
+      chaos:
+        enabled: true
+        failure_rate: 0.2  # 20% failure rate
+        error_codes: [500, 502, 503]
+        latency_min: 1000  # Inject 1-5 seconds latency
+        latency_max: 5000
+```
+
+#### Chaos Features
+
+- **Random failures**: Configurable failure probability (0.0 to 1.0)
+- **Multiple error codes**: Randomly select from a list of status codes
+- **Latency injection**: Add variable delay (min to max range)
+- **Per-mock configuration**: Each mock can have different chaos settings
+- **Sequence support**: Chaos works with sequential responses
+
+#### Chaos Behavior
+
+- When chaos triggers a failure, it immediately returns the error code
+- No normal response body is returned on chaos failures
+- Chaos latency is injected before failure check
+- Failures are logged with "(chaos)" suffix in mock name
+- Chaos is evaluated for every request independently
+
+#### Use Cases
+
+- **Resilience testing**: Verify retry logic and error handling
+- **Circuit breaker testing**: Test circuit breaker patterns
+- **Timeout testing**: Validate timeout configurations
+- **Graceful degradation**: Test fallback mechanisms
+- **Load testing**: Simulate partial system failures
+
+More examples available in `mocks/chaos-examples.yaml`.
+
+### Advanced Latency Simulation
+
+Configure realistic latency patterns beyond simple fixed delays. Perfect for simulating real-world network conditions and database performance.
+
+#### Random Latency
+
+Variable latency within a range:
+
+```yaml
+mocks:
+  - name: "API with Random Latency"
+    request:
+      uri: "/api/data"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"data": "response"}'
+      latency:
+        type: "random"
+        min: 100   # 100ms minimum
+        max: 2000  # 2 seconds maximum
+```
+
+#### Percentile-Based Latency
+
+Realistic latency distribution (most useful for simulating real APIs):
+
+```yaml
+mocks:
+  - name: "Database Query"
+    request:
+      uri: "/api/query"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"results": []}'
+      latency:
+        type: "percentile"
+        p50: 100   # 50% of requests < 100ms
+        p95: 500   # 95% of requests < 500ms
+        p99: 1000  # 99% of requests < 1s
+```
+
+#### Fixed Latency (Legacy)
+
+Standard fixed delay (same as using the `delay` field):
+
+```yaml
+mocks:
+  - name: "Fixed Delay"
+    request:
+      uri: "/api/slow"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"message": "slow response"}'
+      latency:
+        type: "fixed"
+      delay: 500  # Always 500ms
+```
+
+#### Latency Types
+
+| Type | Description | Parameters |
+|------|-------------|------------|
+| `random` | Random delay within range | `min`, `max` (milliseconds) |
+| `percentile` | Percentile-based distribution | `p50`, `p95`, `p99` (milliseconds) |
+| `fixed` | Fixed delay | Uses `delay` field |
+
+#### Use Cases
+
+- **Performance testing**: Simulate slow databases or external APIs
+- **Timeout testing**: Test client timeout configurations
+- **Realistic simulation**: Model real API latency distributions
+- **Network conditions**: Simulate variable network speeds
+- **Microservice delays**: Model inter-service communication delays
+
+More examples available in `mocks/latency-examples.yaml`.
+
+### Response Header Templates
+
+Use Go templates in response headers to create dynamic, request-aware headers. Perfect for request tracking, debugging, and conditional responses.
+
+#### Basic Header Templates
+
+Enable header templating and use request data:
+
+```yaml
+mocks:
+  - name: "Echo Headers"
+    request:
+      uri: "/api/echo"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true  # Enable templating for headers
+      headers:
+        Content-Type: "application/json"
+        X-Request-ID: "{{.RequestID}}"
+        X-Request-Method: "{{.Request.Method}}"
+        X-Request-URI: "{{.Request.URI}}"
+        X-User-Agent: "{{.Request.Headers.User-Agent}}"
+      body: '{"message": "Check the headers!"}'
+```
+
+#### Request Tracking
+
+```yaml
+mocks:
+  - name: "Request Tracking"
+    request:
+      uri: "/api/tracked"
+      method: "POST"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        X-Request-ID: "{{.RequestID}}"
+        X-Timestamp: "{{.Timestamp}}"
+        X-Client-IP: "{{.Request.RemoteAddr}}"
+      body: '{"status": "tracked"}'
+```
+
+#### Conditional Headers
+
+```yaml
+mocks:
+  - name: "Conditional Headers"
+    request:
+      uri: "/api/auth"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        X-Has-Auth: "{{if .Request.Headers.Authorization}}true{{else}}false{{end}}"
+        X-Auth-Type: "{{.Request.Headers.Authorization | default \"none\"}}"
+      body: '{"authenticated": false}'
+```
+
+#### Available Template Data
+
+- `.RequestID` - Unique request identifier
+- `.Timestamp` - Current timestamp
+- `.Request.Method` - HTTP method
+- `.Request.URI` - Request URI
+- `.Request.Headers.HeaderName` - Access any request header
+- `.Request.Query.param` - Access query parameters
+- `.Request.RemoteAddr` - Client IP address
+
+#### Use Cases
+
+- **Request tracking**: Add unique IDs and timestamps to every response
+- **Debugging**: Echo request information in headers
+- **CORS**: Dynamic CORS headers based on request origin
+- **Rate limiting**: Add rate limit headers with dynamic values
+- **Authentication**: Track auth status in headers
+- **API versioning**: Include version information in headers
+
+More examples available in `mocks/header-template-examples.yaml`.
+
+### CORS Auto-Configuration
+
+Enable Cross-Origin Resource Sharing (CORS) with a simple command-line flag. Perfect for browser-based applications and API testing.
+
+#### Enabling CORS
+
+```bash
+# Enable CORS with defaults (allow all origins)
+./pmp-mock-http --enable-cors
+
+# Customize CORS settings
+./pmp-mock-http --enable-cors \
+  --cors-origins "https://example.com,https://app.example.com" \
+  --cors-methods "GET,POST,PUT,DELETE,PATCH,OPTIONS" \
+  --cors-headers "Content-Type,Authorization,X-Custom-Header"
+```
+
+#### Environment Variables
+
+```bash
+export ENABLE_CORS=true
+export CORS_ORIGINS="*"
+export CORS_METHODS="GET,POST,PUT,DELETE,PATCH,OPTIONS"
+export CORS_HEADERS="Content-Type,Authorization"
+```
+
+#### CORS Behavior
+
+When CORS is enabled:
+- `Access-Control-Allow-Origin` header is added to all responses
+- `Access-Control-Allow-Methods` header is added to all responses
+- `Access-Control-Allow-Headers` header is added to all responses
+- `OPTIONS` preflight requests are automatically handled
+- Preflight requests return `204 No Content`
+- CORS headers are set before any mock matching occurs
+
+#### Default Values
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--enable-cors` | `false` | Enable CORS support |
+| `--cors-origins` | `*` | Allowed origins (comma-separated) |
+| `--cors-methods` | `GET,POST,PUT,DELETE,PATCH,OPTIONS` | Allowed methods |
+| `--cors-headers` | `Content-Type,Authorization` | Allowed headers |
+
+#### Use Cases
+
+- **Browser testing**: Enable CORS for browser-based API testing
+- **Frontend development**: Allow local frontend to call mock server
+- **Cross-domain requests**: Test cross-domain API calls
+- **Microservices**: Enable service-to-service communication
+- **API gateways**: Mock API gateway CORS behavior
+
+### Mock Health Checks
+
+Automatically validate mock configurations on startup to catch errors early. Enabled by default.
+
+#### Validation Features
+
+The validator checks for:
+- **Invalid regex patterns**: URI, method, header, body regex
+- **Invalid JavaScript**: Syntax errors in JavaScript matchers
+- **Invalid JSON schemas**: Malformed validate_schema configurations
+- **Chaos configuration**: Failure rates, error codes, latency values
+- **Latency configuration**: Type, min/max values, percentiles
+- **Sequence configuration**: Valid sequence modes
+- **Duplicate mock names**: Warns about duplicate names
+- **Unusual status codes**: Warns about non-standard codes
+
+#### Running Validation
+
+```bash
+# Validation is enabled by default
+./pmp-mock-http
+
+# Disable validation
+./pmp-mock-http --validate-mocks=false
+
+# Environment variable
+export VALIDATE_MOCKS=true
+```
+
+#### Validation Output
+
+**Success:**
+```
+✅ All mocks validated successfully!
+```
+
+**With Warnings:**
+```
+⚠️  Mock Validation Warnings:
+  WARNING: Duplicate mock name 'User API' (2 occurrences)
+  WARNING: Mock #5 (Test): unusual status code 299
+
+✅ Mocks are valid (with 2 warnings)
+```
+
+**Failure:**
+```
+❌ Mock Validation FAILED:
+  ERROR: Mock #3 (Regex Test): invalid URI regex: error parsing regexp
+  ERROR: Mock #7 (Schema): invalid JSON schema: $schema must be a string
+
+Mock validation failed. Fix errors and try again, or disable validation with --validate-mocks=false
+```
+
+#### Validation Behavior
+
+- **Errors**: Server will not start if validation fails
+- **Warnings**: Server starts, but warnings are displayed
+- **Disabled**: All validation is skipped (not recommended)
+
+#### Use Cases
+
+- **Development**: Catch configuration errors immediately
+- **CI/CD**: Validate mocks in build pipeline
+- **Team collaboration**: Ensure all team members use valid configs
+- **Refactoring**: Verify configs after changes
+- **Production safety**: Prevent invalid configs from reaching production
 
 ### Plugins System
 

@@ -1,0 +1,154 @@
+# Advanced Latency Simulation Examples
+# Configure realistic latency patterns for testing
+
+mocks:
+  # Random latency - different delay each time
+  - name: "API with Random Latency"
+    priority: 10
+    request:
+      uri: "/api/random-latency"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"message": "Response with random latency"}'
+      latency:
+        type: "random"
+        min: 100   # 100ms minimum
+        max: 2000  # 2 seconds maximum
+
+  # Percentile-based latency - realistic distribution
+  - name: "API with Percentile Latency"
+    priority: 10
+    request:
+      uri: "/api/percentile-latency"
+      method: "GET"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "data": "This endpoint uses percentile-based latency",
+          "info": "50% of requests < 100ms, 95% < 500ms, 99% < 1000ms"
+        }
+      latency:
+        type: "percentile"
+        p50: 100   # 50% of requests return within 100ms
+        p95: 500   # 95% of requests return within 500ms
+        p99: 1000  # 99% of requests return within 1s
+
+  # Fixed latency (legacy support, same as standard delay)
+  - name: "API with Fixed Latency"
+    priority: 10
+    request:
+      uri: "/api/fixed-latency"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"message": "Fixed 500ms delay"}'
+      latency:
+        type: "fixed"
+      delay: 500  # Always 500ms
+
+  # Database simulation - realistic query times
+  - name: "Database Query - Realistic Latency"
+    priority: 10
+    request:
+      uri: "/api/database/users"
+      method: "GET"
+    response:
+      status_code: 200
+      body: |
+        {
+          "users": [
+            {"id": 1, "name": "Alice"},
+            {"id": 2, "name": "Bob"}
+          ],
+          "count": 2
+        }
+      latency:
+        type: "percentile"
+        p50: 50    # Fast queries (index hit)
+        p95: 200   # Slower queries
+        p99: 500   # Rare slow queries
+
+  # External API simulation - variable network latency
+  - name: "External API Call"
+    priority: 10
+    request:
+      uri: "/api/external"
+      method: "POST"
+    response:
+      status_code: 200
+      body: '{"status": "success", "external_id": "ext_123"}'
+      latency:
+        type: "random"
+        min: 500
+        max: 3000  # Network calls can vary widely
+
+  # Slow endpoint - testing timeouts
+  - name: "Slow Endpoint for Timeout Testing"
+    priority: 10
+    request:
+      uri: "/api/slow"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"message": "This was slow!"}'
+      latency:
+        type: "random"
+        min: 5000   # 5-10 seconds
+        max: 10000
+
+  # Microservice simulation - fast responses
+  - name: "Fast Microservice"
+    priority: 10
+    request:
+      uri: "/api/cache/get"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"cached": true, "value": "quick response"}'
+      latency:
+        type: "percentile"
+        p50: 10    # Very fast (cache hit)
+        p95: 50
+        p99: 100
+
+  # Sequence with different latencies per step
+  - name: "Multi-Step Process with Variable Latency"
+    priority: 10
+    request:
+      uri: "/api/workflow"
+      method: "POST"
+    response:
+      sequence:
+        - status_code: 202
+          body: '{"status": "started"}'
+          latency:
+            type: "fixed"
+          delay: 100
+        - status_code: 200
+          body: '{"status": "processing"}'
+          latency:
+            type: "random"
+            min: 500
+            max: 2000
+        - status_code: 200
+          body: '{"status": "completed"}'
+          latency:
+            type: "percentile"
+            p50: 200
+            p95: 1000
+            p99: 3000
+      sequence_mode: "cycle"
+
+  # No latency configuration (instant response)
+  - name: "Instant Response"
+    priority: 10
+    request:
+      uri: "/api/instant"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"message": "No delay configured"}'

@@ -1,0 +1,169 @@
+# Response Header Templates Examples
+# Use Go templates in response headers for dynamic values
+
+mocks:
+  # Basic header templating - echo request headers
+  - name: "Echo User-Agent Header"
+    priority: 10
+    request:
+      uri: "/api/echo-headers"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true  # Enable template rendering for headers
+      headers:
+        Content-Type: "application/json"
+        X-Request-User-Agent: "{{.Request.Headers.User-Agent}}"
+        X-Request-Method: "{{.Request.Method}}"
+        X-Request-URI: "{{.Request.URI}}"
+      body: '{"message": "Check the response headers!"}'
+
+  # Request ID tracking
+  - name: "Request ID Tracking"
+    priority: 10
+    request:
+      uri: "/api/tracked"
+      method: "POST"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-Request-ID: "{{.RequestID}}"
+        X-Timestamp: "{{.Timestamp}}"
+      body: '{"status": "tracked"}'
+
+  # Conditional headers based on request
+  - name: "Conditional Headers"
+    priority: 10
+    request:
+      uri: "/api/conditional"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-Has-Auth: "{{if .Request.Headers.Authorization}}true{{else}}false{{end}}"
+        X-Client-IP: "{{.Request.RemoteAddr}}"
+      body: '{"message": "Headers show auth status"}'
+
+  # API versioning in headers
+  - name: "API Versioning"
+    priority: 10
+    request:
+      uri: "/api/v1/data"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-API-Version: "1.0"
+        X-Request-Path: "{{.Request.URI}}"
+        X-Served-By: "pmp-mock-http"
+      body: '{"data": "version 1 response"}'
+
+  # CORS with dynamic origins
+  - name: "Dynamic CORS Headers"
+    priority: 10
+    request:
+      uri: "/api/cors-dynamic"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        Access-Control-Allow-Origin: "{{.Request.Headers.Origin}}"
+        Access-Control-Allow-Methods: "GET,POST,PUT,DELETE"
+        X-Request-Origin: "{{.Request.Headers.Origin}}"
+      body: '{"message": "CORS enabled dynamically"}'
+
+  # Rate limit headers
+  - name: "Rate Limit Headers"
+    priority: 10
+    request:
+      uri: "/api/rate-limited"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-RateLimit-Limit: "100"
+        X-RateLimit-Remaining: "{{.RequestID | len}}"
+        X-RateLimit-Reset: "{{.Timestamp}}"
+      body: '{"message": "Rate limit info in headers"}'
+
+  # Authentication headers
+  - name: "Auth Response Headers"
+    priority: 10
+    request:
+      uri: "/api/login"
+      method: "POST"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-Auth-User: "{{.Request.Headers.X-Username}}"
+        X-Login-Time: "{{.Timestamp}}"
+        Set-Cookie: "session={{.RequestID}}; Path=/; HttpOnly"
+      body: '{"message": "Logged in", "session_id": "{{.RequestID}}"}'
+      template: true
+
+  # Custom business logic in headers
+  - name: "Business Logic Headers"
+    priority: 10
+    request:
+      uri: "/api/business"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-Environment: "{{if eq .Request.Headers.X-Env \"prod\"}}production{{else}}development{{end}}"
+        X-Region: "{{.Request.Headers.X-Region | default \"us-east-1\"}}"
+      body: '{"status": "ok"}'
+
+  # Debugging headers
+  - name: "Debug Headers"
+    priority: 10
+    request:
+      uri: "/api/debug"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-Debug-Method: "{{.Request.Method}}"
+        X-Debug-URI: "{{.Request.URI}}"
+        X-Debug-Content-Length: "{{.Request.Headers.Content-Length}}"
+        X-Debug-Request-ID: "{{.RequestID}}"
+      body: |
+        {
+          "debug": {
+            "method": "{{.Request.Method}}",
+            "uri": "{{.Request.URI}}",
+            "request_id": "{{.RequestID}}"
+          }
+        }
+      template: true
+
+  # Without header templates (static headers)
+  - name: "Static Headers Only"
+    priority: 10
+    request:
+      uri: "/api/static"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: false  # Templates disabled for headers
+      headers:
+        Content-Type: "application/json"
+        X-Static: "This value is static"
+        X-Template: "{{.Request.URI}}"  # This will NOT be rendered
+      body: '{"message": "Headers are static"}'

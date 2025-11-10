@@ -43,24 +43,49 @@ type JSONPathMatcher struct {
 
 // Response defines what to return when a request matches
 type Response struct {
-	StatusCode   int               `yaml:"status_code"`
-	Headers      map[string]string `yaml:"headers"`
-	Body         string            `yaml:"body"`
-	Delay        int               `yaml:"delay"`        // Response delay in milliseconds
-	Template     bool              `yaml:"template"`     // If true, body is a Go template
-	Callback     *Callback         `yaml:"callback"`     // Optional callback to trigger
-	Sequence     []ResponseItem    `yaml:"sequence"`     // Sequential responses
-	SequenceMode string            `yaml:"sequence_mode"` // "cycle" or "once" (default: cycle)
+	StatusCode      int               `yaml:"status_code"`
+	Headers         map[string]string `yaml:"headers"`
+	Body            string            `yaml:"body"`
+	Delay           int               `yaml:"delay"`           // Response delay in milliseconds (fixed)
+	Template        bool              `yaml:"template"`        // If true, body is a Go template
+	HeaderTemplates bool              `yaml:"header_templates"` // If true, headers support Go templates
+	Callback        *Callback         `yaml:"callback"`        // Optional callback to trigger
+	Sequence        []ResponseItem    `yaml:"sequence"`        // Sequential responses
+	SequenceMode    string            `yaml:"sequence_mode"`   // "cycle" or "once" (default: cycle)
+	Chaos           *ChaosConfig      `yaml:"chaos"`           // Chaos engineering configuration
+	Latency         *LatencyConfig    `yaml:"latency"`         // Advanced latency simulation
+}
+
+// ChaosConfig defines chaos engineering behavior
+type ChaosConfig struct {
+	Enabled     bool    `yaml:"enabled"`      // Enable chaos mode
+	FailureRate float64 `yaml:"failure_rate"` // Probability of failure (0.0 to 1.0)
+	ErrorCodes  []int   `yaml:"error_codes"`  // Status codes to randomly return on failure
+	LatencyMin  int     `yaml:"latency_min"`  // Minimum latency to inject (ms)
+	LatencyMax  int     `yaml:"latency_max"`  // Maximum latency to inject (ms)
+}
+
+// LatencyConfig defines advanced latency simulation
+type LatencyConfig struct {
+	Type string `yaml:"type"` // "fixed", "random", "percentile"
+	Min  int    `yaml:"min"`  // Minimum latency for random (ms)
+	Max  int    `yaml:"max"`  // Maximum latency for random (ms)
+	P50  int    `yaml:"p50"`  // 50th percentile latency (ms)
+	P95  int    `yaml:"p95"`  // 95th percentile latency (ms)
+	P99  int    `yaml:"p99"`  // 99th percentile latency (ms)
 }
 
 // ResponseItem represents a single response in a sequence
 type ResponseItem struct {
-	StatusCode int               `yaml:"status_code"`
-	Headers    map[string]string `yaml:"headers"`
-	Body       string            `yaml:"body"`
-	Delay      int               `yaml:"delay"`
-	Template   bool              `yaml:"template"`
-	Callback   *Callback         `yaml:"callback"`
+	StatusCode      int               `yaml:"status_code"`
+	Headers         map[string]string `yaml:"headers"`
+	Body            string            `yaml:"body"`
+	Delay           int               `yaml:"delay"`
+	Template        bool              `yaml:"template"`
+	HeaderTemplates bool              `yaml:"header_templates"`
+	Callback        *Callback         `yaml:"callback"`
+	Chaos           *ChaosConfig      `yaml:"chaos"`
+	Latency         *LatencyConfig    `yaml:"latency"`
 }
 
 // Callback defines an HTTP callback to trigger when a mock matches

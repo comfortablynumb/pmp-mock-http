@@ -1,0 +1,117 @@
+# Chaos Engineering Examples
+# Chaos engineering helps test system resilience by injecting random failures
+
+mocks:
+  # Basic chaos - 30% chance of failure
+  - name: "User API with Basic Chaos"
+    priority: 10
+    request:
+      uri: "/api/users/123"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"id": 123, "name": "John Doe"}'
+      chaos:
+        enabled: true
+        failure_rate: 0.3  # 30% chance of failure
+        error_codes: [500, 503]  # Randomly return these status codes on failure
+
+  # Chaos with latency injection
+  - name: "Orders API with Chaos Latency"
+    priority: 10
+    request:
+      uri: "/api/orders"
+      method: "POST"
+    response:
+      status_code: 201
+      body: '{"order_id": 456, "status": "created"}'
+      chaos:
+        enabled: true
+        failure_rate: 0.2  # 20% chance of failure
+        error_codes: [500, 502, 503, 504]
+        latency_min: 1000  # Inject 1-5 seconds of latency
+        latency_max: 5000
+
+  # High failure rate for testing error handling
+  - name: "Payment API - High Failure Rate"
+    priority: 10
+    request:
+      uri: "/api/payments"
+      method: "POST"
+    response:
+      status_code: 200
+      body: '{"status": "success", "transaction_id": "tx_123"}'
+      chaos:
+        enabled: true
+        failure_rate: 0.8  # 80% failure rate
+        error_codes: [402, 500, 503]
+        latency_min: 500
+        latency_max: 3000
+
+  # Chaos with circuit breaker simulation
+  - name: "External Service - Circuit Breaker"
+    priority: 10
+    request:
+      uri: "/api/external/data"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"data": "success"}'
+      chaos:
+        enabled: true
+        failure_rate: 0.5  # 50% failure rate
+        error_codes: [503, 504]  # Service unavailable, gateway timeout
+        latency_min: 2000
+        latency_max: 10000  # 2-10 second delay
+
+  # Realistic chaos - low failure rate with specific errors
+  - name: "Database API - Realistic Chaos"
+    priority: 10
+    request:
+      uri: "/api/database/query"
+      method: "POST"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "results": [
+            {"id": 1, "name": "Record 1"},
+            {"id": 2, "name": "Record 2"}
+          ]
+        }
+      chaos:
+        enabled: true
+        failure_rate: 0.05  # 5% failure rate (realistic)
+        error_codes: [500, 503]
+        latency_min: 100
+        latency_max: 1000
+
+  # Chaos in sequences - each call can fail independently
+  - name: "Multi-Step Process with Chaos"
+    priority: 10
+    request:
+      uri: "/api/process/start"
+      method: "POST"
+    response:
+      sequence:
+        - status_code: 202
+          body: '{"status": "initializing"}'
+          chaos:
+            enabled: true
+            failure_rate: 0.1
+            error_codes: [500]
+        - status_code: 200
+          body: '{"status": "processing"}'
+          chaos:
+            enabled: true
+            failure_rate: 0.15
+            error_codes: [500, 503]
+        - status_code: 200
+          body: '{"status": "completed"}'
+          chaos:
+            enabled: true
+            failure_rate: 0.05
+            error_codes: [500]
+      sequence_mode: "cycle"

@@ -16,6 +16,7 @@ import (
 	"github.com/comfortablynumb/pmp-mock-http/internal/server"
 	"github.com/comfortablynumb/pmp-mock-http/internal/tracker"
 	"github.com/comfortablynumb/pmp-mock-http/internal/ui"
+	"github.com/comfortablynumb/pmp-mock-http/internal/validator"
 	"github.com/comfortablynumb/pmp-mock-http/internal/watcher"
 )
 
@@ -60,6 +61,11 @@ var (
 	tlsEnabled          = flag.Bool("tls", getEnvBool("TLS_ENABLED", false), "Enable TLS/HTTPS")
 	tlsCertFile         = flag.String("tls-cert", getEnvString("TLS_CERT_FILE", ""), "Path to TLS certificate file")
 	tlsKeyFile          = flag.String("tls-key", getEnvString("TLS_KEY_FILE", ""), "Path to TLS private key file")
+	enableCORS          = flag.Bool("enable-cors", getEnvBool("ENABLE_CORS", false), "Enable CORS support")
+	corsOrigins         = flag.String("cors-origins", getEnvString("CORS_ORIGINS", "*"), "CORS allowed origins")
+	corsMethods         = flag.String("cors-methods", getEnvString("CORS_METHODS", "GET,POST,PUT,DELETE,PATCH,OPTIONS"), "CORS allowed methods")
+	corsHeaders         = flag.String("cors-headers", getEnvString("CORS_HEADERS", "Content-Type,Authorization"), "CORS allowed headers")
+	validateMocks       = flag.Bool("validate-mocks", getEnvBool("VALIDATE_MOCKS", true), "Validate mock configurations on startup")
 )
 
 func main() {
@@ -121,6 +127,18 @@ func main() {
 		log.Printf("Warning: failed to load mocks: %v\n", err)
 	}
 
+	// Validate mocks if enabled
+	if *validateMocks {
+		mockValidator := validator.NewValidator()
+		validationResult := mockValidator.ValidateMocks(mockLoader.GetMocks())
+		mockValidator.PrintValidationResult(validationResult)
+
+		// Exit if validation failed
+		if !validationResult.Valid {
+			log.Fatal("Mock validation failed. Fix errors and try again, or disable validation with --validate-mocks=false")
+		}
+	}
+
 	// Create request tracker for UI dashboard
 	requestTracker := tracker.NewTracker(1000) // Keep last 1000 requests
 
@@ -134,8 +152,20 @@ func main() {
 		}
 	}
 
-	// Create the mock server with tracker and proxy config
-	srv := server.NewServerWithTracker(*port, mockLoader.GetMocks(), requestTracker, proxyConfig)
+	// Create CORS configuration if enabled
+	var corsConfig *server.CORSConfig
+	if *enableCORS {
+		corsConfig = &server.CORSConfig{
+			Enabled: true,
+			Origins: *corsOrigins,
+			Methods: *corsMethods,
+			Headers: *corsHeaders,
+		}
+		log.Printf("CORS enabled: Origins=%s, Methods=%s, Headers=%s\n", *corsOrigins, *corsMethods, *corsHeaders)
+	}
+
+	// Create the mock server with tracker, proxy config, and CORS config
+	srv := server.NewServerWithTracker(*port, mockLoader.GetMocks(), requestTracker, proxyConfig, corsConfig)
 
 	// Create and start the UI server
 	uiServer := ui.NewServer(*uiPort, requestTracker)
