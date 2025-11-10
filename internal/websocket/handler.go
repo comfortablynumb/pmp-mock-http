@@ -261,11 +261,14 @@ func (h *Handler) handleJavaScriptMode(conn *websocket.Conn, requestData *templa
 	vm := goja.New()
 
 	// Set up global objects
-	vm.Set("console", map[string]interface{}{
+	if err := vm.Set("console", map[string]interface{}{
 		"log": func(args ...interface{}) {
 			log.Println("WebSocket JS:", fmt.Sprint(args...))
 		},
-	})
+	}); err != nil {
+		log.Printf("WebSocket: Error setting console in JavaScript VM: %v\n", err)
+		return
+	}
 
 	// Create connection object with send method
 	connObj := map[string]interface{}{
@@ -283,18 +286,27 @@ func (h *Handler) handleJavaScriptMode(conn *websocket.Conn, requestData *templa
 			return conn.Close()
 		},
 	}
-	vm.Set("connection", connObj)
+	if err := vm.Set("connection", connObj); err != nil {
+		log.Printf("WebSocket: Error setting connection object in JavaScript VM: %v\n", err)
+		return
+	}
 
 	// Set up request object
-	vm.Set("request", map[string]interface{}{
+	if err := vm.Set("request", map[string]interface{}{
 		"uri":        requestData.URI,
 		"method":     requestData.Method,
 		"headers":    requestData.Headers,
 		"remoteAddr": requestData.RemoteAddr,
-	})
+	}); err != nil {
+		log.Printf("WebSocket: Error setting request object in JavaScript VM: %v\n", err)
+		return
+	}
 
 	// Set up global state object (shared across all connections)
-	vm.Set("global", vm.NewObject())
+	if err := vm.Set("global", vm.NewObject()); err != nil {
+		log.Printf("WebSocket: Error setting global object in JavaScript VM: %v\n", err)
+		return
+	}
 
 	// Message handler
 	messageHandler := make(chan []byte, 256)
@@ -313,9 +325,12 @@ func (h *Handler) handleJavaScriptMode(conn *websocket.Conn, requestData *templa
 
 	// Set up onMessage callback
 	var onMessageCallback func(string)
-	vm.Set("onMessage", func(callback func(string)) {
+	if err := vm.Set("onMessage", func(callback func(string)) {
 		onMessageCallback = callback
-	})
+	}); err != nil {
+		log.Printf("WebSocket: Error setting onMessage callback in JavaScript VM: %v\n", err)
+		return
+	}
 
 	// Execute JavaScript initialization code
 	_, err := vm.RunString(h.mock.WebSocket.JavaScript)
