@@ -1,0 +1,234 @@
+# Advanced Features Combined Examples
+# Demonstrations combining chaos, latency, header templates, and more
+
+mocks:
+  # Realistic production API simulation
+  - name: "Production API Simulation"
+    scenarios: ["production"]
+    priority: 10
+    request:
+      uri: "/api/users"
+      method: "GET"
+      headers:
+        Authorization: "Bearer .*"
+      regex:
+        headers: true
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-Request-ID: "{{.RequestID}}"
+        X-Response-Time: "{{.Timestamp}}"
+        X-Auth-User: "{{.Request.Headers.Authorization}}"
+      body: |
+        {
+          "users": [
+            {"id": 1, "name": "{{.Faker.Name}}"},
+            {"id": 2, "name": "{{.Faker.Name}}"}
+          ],
+          "request_id": "{{.RequestID}}"
+        }
+      template: true
+      latency:
+        type: "percentile"
+        p50: 50
+        p95: 200
+        p99: 500
+      chaos:
+        enabled: true
+        failure_rate: 0.02  # 2% failure rate (realistic)
+        error_codes: [500, 503]
+        latency_min: 0
+        latency_max: 1000
+
+  # Payment processing with comprehensive features
+  - name: "Payment Processing"
+    priority: 10
+    request:
+      uri: "/api/payments"
+      method: "POST"
+      validate_schema:
+        type: "object"
+        required: ["amount", "currency", "customer_id"]
+        properties:
+          amount:
+            type: "number"
+            minimum: 0.01
+          currency:
+            type: "string"
+            enum: ["USD", "EUR", "GBP"]
+          customer_id:
+            type: "string"
+    response:
+      status_code: 201
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-Transaction-ID: "{{.RequestID}}"
+        X-Payment-Timestamp: "{{.Timestamp}}"
+        Location: "/api/payments/{{.RequestID}}"
+      body: |
+        {
+          "transaction_id": "{{.RequestID}}",
+          "status": "success",
+          "timestamp": "{{.Timestamp}}",
+          "amount": {{.Request.JSON.amount}},
+          "currency": "{{.Request.JSON.currency}}"
+        }
+      template: true
+      latency:
+        type: "random"
+        min: 200
+        max: 1500  # Payment processing takes time
+      chaos:
+        enabled: true
+        failure_rate: 0.05
+        error_codes: [402, 500, 503]
+
+  # Multi-stage async operation
+  - name: "Async Job Processing"
+    priority: 10
+    request:
+      uri: "/api/jobs/process"
+      method: "POST"
+    response:
+      sequence:
+        # Stage 1: Job queued
+        - status_code: 202
+          header_templates: true
+          headers:
+            Content-Type: "application/json"
+            X-Job-ID: "{{.RequestID}}"
+            X-Stage: "queued"
+          body: '{"job_id": "{{.RequestID}}", "status": "queued"}'
+          template: true
+          latency:
+            type: "fixed"
+          delay: 100
+        # Stage 2: Job processing
+        - status_code: 200
+          header_templates: true
+          headers:
+            Content-Type: "application/json"
+            X-Job-ID: "{{.RequestID}}"
+            X-Stage: "processing"
+          body: '{"job_id": "{{.RequestID}}", "status": "processing", "progress": 50}'
+          template: true
+          latency:
+            type: "random"
+            min: 500
+            max: 2000
+          chaos:
+            enabled: true
+            failure_rate: 0.1
+            error_codes: [500]
+        # Stage 3: Job completed
+        - status_code: 200
+          header_templates: true
+          headers:
+            Content-Type: "application/json"
+            X-Job-ID: "{{.RequestID}}"
+            X-Stage: "completed"
+            X-Completion-Time: "{{.Timestamp}}"
+          body: '{"job_id": "{{.RequestID}}", "status": "completed", "result": "success"}'
+          template: true
+          latency:
+            type: "fixed"
+          delay: 200
+      sequence_mode: "cycle"
+
+  # Search API with all features
+  - name: "Search API"
+    priority: 10
+    request:
+      uri: "/api/search"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-Search-Query: "{{.Request.Query.q}}"
+        X-Results-Count: "3"
+        X-Search-Time-Ms: "{{.Request.Query.q | len}}"
+        Cache-Control: "public, max-age=300"
+      body: |
+        {
+          "query": "{{.Request.Query.q}}",
+          "results": [
+            {"id": 1, "title": "Result 1", "score": 0.95},
+            {"id": 2, "title": "Result 2", "score": 0.87},
+            {"id": 3, "title": "Result 3", "score": 0.72}
+          ],
+          "total": 3,
+          "search_time_ms": {{.Request.Query.q | len}},
+          "request_id": "{{.RequestID}}"
+        }
+      template: true
+      latency:
+        type: "percentile"
+        p50: 30   # Fast cached results
+        p95: 150  # Index searches
+        p99: 500  # Full scans
+      chaos:
+        enabled: true
+        failure_rate: 0.01  # Rare search failures
+        error_codes: [500, 503]
+
+  # Health check with debugging
+  - name: "Health Check"
+    priority: 10
+    request:
+      uri: "/health"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-Health-Status: "healthy"
+        X-Check-Time: "{{.Timestamp}}"
+        X-Server-ID: "mock-{{.RequestID}}"
+      body: |
+        {
+          "status": "healthy",
+          "timestamp": "{{.Timestamp}}",
+          "checks": {
+            "database": "ok",
+            "cache": "ok",
+            "external_api": "ok"
+          },
+          "server_id": "mock-{{.RequestID}}"
+        }
+      template: true
+      latency:
+        type: "fixed"
+      delay: 50  # Health checks should be fast
+
+  # Error scenario with chaos
+  - name: "Flaky External Service"
+    scenarios: ["error_testing"]
+    priority: 10
+    request:
+      uri: "/api/external/flaky"
+      method: "GET"
+    response:
+      status_code: 200
+      header_templates: true
+      headers:
+        Content-Type: "application/json"
+        X-External-Call: "true"
+        X-Attempt-ID: "{{.RequestID}}"
+      body: '{"status": "success", "data": "{{.Faker.UUID}}"}'
+      template: true
+      latency:
+        type: "random"
+        min: 1000
+        max: 5000
+      chaos:
+        enabled: true
+        failure_rate: 0.5  # 50% failure for testing retries
+        error_codes: [503, 504]
+        latency_min: 3000
+        latency_max: 10000

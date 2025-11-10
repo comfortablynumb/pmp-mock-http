@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -20,6 +21,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// CORSConfig represents CORS configuration
+type CORSConfig struct {
+	Enabled bool
+	Origins string
+	Methods string
+	Headers string
+}
+
 // Server represents the mock HTTP server
 type Server struct {
 	port             int
@@ -29,11 +38,12 @@ type Server struct {
 	callbackExecutor *callback.Executor
 	proxyClient      *proxy.Client
 	recorder         *recorder.Recorder
+	corsConfig       *CORSConfig
 	mu               sync.RWMutex
 }
 
 // NewServer creates a new mock server
-func NewServer(port int, mocks []models.Mock, proxyConfig *proxy.Config) *Server {
+func NewServer(port int, mocks []models.Mock, proxyConfig *proxy.Config, corsConfig *CORSConfig) *Server {
 	var proxyClient *proxy.Client
 	if proxyConfig != nil {
 		var err error
@@ -51,11 +61,12 @@ func NewServer(port int, mocks []models.Mock, proxyConfig *proxy.Config) *Server
 		callbackExecutor: callback.NewExecutor(),
 		proxyClient:      proxyClient,
 		recorder:         recorder.NewRecorder(),
+		corsConfig:       corsConfig,
 	}
 }
 
 // NewServerWithTracker creates a new mock server with request tracking
-func NewServerWithTracker(port int, mocks []models.Mock, t *tracker.Tracker, proxyConfig *proxy.Config) *Server {
+func NewServerWithTracker(port int, mocks []models.Mock, t *tracker.Tracker, proxyConfig *proxy.Config, corsConfig *CORSConfig) *Server {
 	var proxyClient *proxy.Client
 	if proxyConfig != nil {
 		var err error
@@ -73,6 +84,7 @@ func NewServerWithTracker(port int, mocks []models.Mock, t *tracker.Tracker, pro
 		callbackExecutor: callback.NewExecutor(),
 		proxyClient:      proxyClient,
 		recorder:         recorder.NewRecorder(),
+		corsConfig:       corsConfig,
 	}
 }
 
@@ -125,6 +137,20 @@ func (s *Server) StartTLS(certFile, keyFile string) error {
 // handleRequest handles incoming HTTP requests
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%s %s from %s\n", r.Method, r.URL.Path, r.RemoteAddr)
+
+	// Handle CORS if enabled
+	if s.corsConfig != nil && s.corsConfig.Enabled {
+		w.Header().Set("Access-Control-Allow-Origin", s.corsConfig.Origins)
+		w.Header().Set("Access-Control-Allow-Methods", s.corsConfig.Methods)
+		w.Header().Set("Access-Control-Allow-Headers", s.corsConfig.Headers)
+		w.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -222,13 +248,38 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		s.callbackExecutor.Execute(mock.Response.Callback, requestData)
 	}
 
-	// Apply response delay if specified
-	if mock.Response.Delay > 0 {
-		time.Sleep(time.Duration(mock.Response.Delay) * time.Millisecond)
+	// Apply chaos engineering (if enabled)
+	chaosStatusCode, shouldFail := s.applyChaos(mock.Response.Chaos)
+	if shouldFail {
+		// Chaos injected a failure - return error immediately
+		w.WriteHeader(chaosStatusCode)
+		chaosBody := fmt.Sprintf(`{"error":"Chaos engineering failure","status":%d}`, chaosStatusCode)
+		if _, err := w.Write([]byte(chaosBody)); err != nil {
+			log.Printf("Error writing chaos response: %v\n", err)
+		}
+
+		// Track the chaos response
+		if s.tracker != nil {
+			s.tracker.Log(tracker.RequestLog{
+				Method: r.Method, URI: r.URL.RequestURI(), Headers: headers, Body: bodyStr,
+				Matched: true, MockName: mock.Name + " (chaos)", MockConfig: mock,
+				StatusCode: chaosStatusCode, Response: chaosBody, RemoteAddr: r.RemoteAddr,
+			})
+		}
+		return
 	}
 
+	// Calculate latency (advanced latency or standard delay)
+	latency := s.calculateLatency(mock.Response.Latency, mock.Response.Delay)
+	if latency > 0 {
+		time.Sleep(time.Duration(latency) * time.Millisecond)
+	}
+
+	// Render response headers (with templates if enabled)
+	responseHeaders := s.renderHeaderTemplates(mock.Response.Headers, mock.Response.HeaderTemplates, requestData)
+
 	// Set response headers
-	for key, value := range mock.Response.Headers {
+	for key, value := range responseHeaders {
 		w.Header().Set(key, value)
 	}
 
@@ -490,4 +541,92 @@ func (s *Server) handleScenarioSet(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		log.Printf("Error encoding response: %v\n", err)
 	}
+}
+
+// applyChaos applies chaos engineering logic to the response
+// Returns (statusCode, shouldFail)
+func (s *Server) applyChaos(chaos *models.ChaosConfig) (int, bool) {
+	if chaos == nil || !chaos.Enabled {
+		return 0, false
+	}
+
+	// Check if we should inject failure
+	if rand.Float64() < chaos.FailureRate {
+		// Inject failure - pick random error code
+		if len(chaos.ErrorCodes) > 0 {
+			errorCode := chaos.ErrorCodes[rand.Intn(len(chaos.ErrorCodes))]
+			log.Printf("Chaos: Injecting failure with status code %d\n", errorCode)
+			return errorCode, true
+		}
+	}
+
+	// Inject latency if configured
+	if chaos.LatencyMax > 0 {
+		latency := chaos.LatencyMin
+		if chaos.LatencyMax > chaos.LatencyMin {
+			latency = chaos.LatencyMin + rand.Intn(chaos.LatencyMax-chaos.LatencyMin)
+		}
+		if latency > 0 {
+			log.Printf("Chaos: Injecting %dms latency\n", latency)
+			time.Sleep(time.Duration(latency) * time.Millisecond)
+		}
+	}
+
+	return 0, false
+}
+
+// calculateLatency calculates latency based on the latency configuration
+func (s *Server) calculateLatency(latency *models.LatencyConfig, baseDelay int) int {
+	if latency == nil {
+		return baseDelay
+	}
+
+	switch latency.Type {
+	case "random":
+		if latency.Max > 0 {
+			min := latency.Min
+			max := latency.Max
+			if max > min {
+				return min + rand.Intn(max-min)
+			}
+			return min
+		}
+		return baseDelay
+
+	case "percentile":
+		// Use percentile-based latency distribution
+		roll := rand.Float64()
+		if roll < 0.50 {
+			return latency.P50
+		} else if roll < 0.95 {
+			return latency.P95
+		} else {
+			return latency.P99
+		}
+
+	case "fixed":
+		return baseDelay
+
+	default:
+		return baseDelay
+	}
+}
+
+// renderHeaderTemplates renders templates in response headers
+func (s *Server) renderHeaderTemplates(headers map[string]string, useTemplates bool, requestData *template.RequestData) map[string]string {
+	if !useTemplates || len(headers) == 0 {
+		return headers
+	}
+
+	rendered := make(map[string]string)
+	for key, value := range headers {
+		renderedValue, err := s.templateRenderer.Render(value, requestData)
+		if err != nil {
+			log.Printf("Error rendering header template for '%s': %v\n", key, err)
+			rendered[key] = value // Fall back to original value
+		} else {
+			rendered[key] = renderedValue
+		}
+	}
+	return rendered
 }

@@ -50,7 +50,7 @@ func TestIntegrationFullWorkflow(t *testing.T) {
 	}
 
 	// Create server
-	srv := server.NewServer(0, mockLoader.GetMocks(), nil) // Use port 0 for testing
+	srv := server.NewServer(0, mockLoader.GetMocks(), nil, nil) // Use port 0 for testing
 
 	// Create test server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +182,7 @@ func TestIntegrationWatcherReload(t *testing.T) {
 	}
 
 	// Create server
-	srv := server.NewServer(0, mockLoader.GetMocks(), nil)
+	srv := server.NewServer(0, mockLoader.GetMocks(), nil, nil)
 
 	// Create reload function
 	var reloadCount int32
