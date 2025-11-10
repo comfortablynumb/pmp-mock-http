@@ -83,7 +83,7 @@ func TestClientForward(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Backend", "true")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"proxied": true, "path": "` + r.URL.Path + `"}`))
+		_, _ = w.Write([]byte(`{"proxied": true, "path": "` + r.URL.Path + `"}`))
 	}))
 	defer backend.Close()
 
@@ -137,7 +137,7 @@ func TestClientForwardWithBody(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
-		w.Write(body)
+		_, _ = w.Write(body)
 	}))
 	defer backend.Close()
 

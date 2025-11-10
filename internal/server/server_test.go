@@ -603,7 +603,7 @@ func TestServerProxyPassthrough(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"proxied": true}`))
+		_, _ = w.Write([]byte(`{"proxied": true}`))
 	}))
 	defer backend.Close()
 
