@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -13,8 +14,10 @@ import (
 	"github.com/comfortablynumb/pmp-mock-http/internal/matcher"
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
 	"github.com/comfortablynumb/pmp-mock-http/internal/proxy"
+	"github.com/comfortablynumb/pmp-mock-http/internal/recorder"
 	"github.com/comfortablynumb/pmp-mock-http/internal/template"
 	"github.com/comfortablynumb/pmp-mock-http/internal/tracker"
+	"gopkg.in/yaml.v3"
 )
 
 // Server represents the mock HTTP server
@@ -25,6 +28,7 @@ type Server struct {
 	templateRenderer *template.Renderer
 	callbackExecutor *callback.Executor
 	proxyClient      *proxy.Client
+	recorder         *recorder.Recorder
 	mu               sync.RWMutex
 }
 
@@ -46,6 +50,7 @@ func NewServer(port int, mocks []models.Mock, proxyConfig *proxy.Config) *Server
 		templateRenderer: template.NewRenderer(),
 		callbackExecutor: callback.NewExecutor(),
 		proxyClient:      proxyClient,
+		recorder:         recorder.NewRecorder(),
 	}
 }
 
@@ -67,12 +72,21 @@ func NewServerWithTracker(port int, mocks []models.Mock, t *tracker.Tracker, pro
 		templateRenderer: template.NewRenderer(),
 		callbackExecutor: callback.NewExecutor(),
 		proxyClient:      proxyClient,
+		recorder:         recorder.NewRecorder(),
 	}
 }
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
 	http.HandleFunc("/", s.handleRequest)
+
+	// Register recording control endpoints
+	http.HandleFunc("/__recording/start", s.handleRecordingStart)
+	http.HandleFunc("/__recording/stop", s.handleRecordingStop)
+	http.HandleFunc("/__recording/status", s.handleRecordingStatus)
+	http.HandleFunc("/__recording/clear", s.handleRecordingClear)
+	http.HandleFunc("/__recording/export", s.handleRecordingExport)
+	http.HandleFunc("/__recording/list", s.handleRecordingList)
 
 	addr := fmt.Sprintf(":%d", s.port)
 	log.Printf("Mock server listening on http://localhost%s\n", addr)
@@ -83,6 +97,14 @@ func (s *Server) Start() error {
 // StartTLS starts the HTTPS server with TLS
 func (s *Server) StartTLS(certFile, keyFile string) error {
 	http.HandleFunc("/", s.handleRequest)
+
+	// Register recording control endpoints
+	http.HandleFunc("/__recording/start", s.handleRecordingStart)
+	http.HandleFunc("/__recording/stop", s.handleRecordingStop)
+	http.HandleFunc("/__recording/status", s.handleRecordingStatus)
+	http.HandleFunc("/__recording/clear", s.handleRecordingClear)
+	http.HandleFunc("/__recording/export", s.handleRecordingExport)
+	http.HandleFunc("/__recording/list", s.handleRecordingList)
 
 	addr := fmt.Sprintf(":%d", s.port)
 	log.Printf("Mock server listening on https://localhost%s (TLS enabled)\n", addr)
@@ -231,6 +253,19 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			Response: responseBody, RemoteAddr: r.RemoteAddr,
 		})
 	}
+
+	// Record request/response if recording is enabled
+	if s.recorder.IsEnabled() {
+		// Convert response headers to map
+		respHeaders := make(map[string]string)
+		for key, values := range w.Header() {
+			if len(values) > 0 {
+				respHeaders[key] = values[0]
+			}
+		}
+		s.recorder.Record(r.Method, r.URL.Path, headers, bodyStr,
+			mock.Response.StatusCode, respHeaders, responseBody)
+	}
 }
 
 // UpdateMocks updates the server's matcher with new mocks
@@ -239,4 +274,111 @@ func (s *Server) UpdateMocks(mocks []models.Mock) {
 	defer s.mu.Unlock()
 
 	s.matcher.UpdateMocks(mocks)
+}
+
+// handleRecordingStart handles starting the recording
+func (s *Server) handleRecordingStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.recorder.Start()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "recording",
+		"message": "Recording started",
+	})
+}
+
+// handleRecordingStop handles stopping the recording
+func (s *Server) handleRecordingStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.recorder.Stop()
+	count := s.recorder.Count()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "stopped",
+		"message": "Recording stopped",
+		"count":   count,
+	})
+}
+
+// handleRecordingStatus handles getting the recording status
+func (s *Server) handleRecordingStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"enabled": s.recorder.IsEnabled(),
+		"count":   s.recorder.Count(),
+	})
+}
+
+// handleRecordingClear handles clearing all recordings
+func (s *Server) handleRecordingClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.recorder.Clear()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "cleared",
+		"message": "All recordings cleared",
+	})
+}
+
+// handleRecordingExport handles exporting recordings as mocks
+func (s *Server) handleRecordingExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse query parameters
+	format := r.URL.Query().Get("format") // "json" or "yaml"
+	groupBy := r.URL.Query().Get("group")  // "uri" to group by URI
+
+	groupByURI := groupBy == "uri"
+	mockSpec := s.recorder.ExportAsMocks(groupByURI)
+
+	if format == "json" {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", "attachment; filename=recorded-mocks.json")
+		json.NewEncoder(w).Encode(mockSpec)
+	} else {
+		// Default to YAML
+		w.Header().Set("Content-Type", "application/x-yaml")
+		w.Header().Set("Content-Disposition", "attachment; filename=recorded-mocks.yaml")
+		yaml.NewEncoder(w).Encode(mockSpec)
+	}
+}
+
+// handleRecordingList handles listing all recordings
+func (s *Server) handleRecordingList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	recordings := s.recorder.GetRecordings()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"count":      len(recordings),
+		"recordings": recordings,
+	})
 }

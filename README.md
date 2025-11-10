@@ -22,6 +22,8 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 - ✅ **Template Responses**: Use Go templates to generate dynamic responses with access to request data
 - ✅ **Fake Data Generation**: Built-in template functions for generating realistic fake data (names, emails, UUIDs, etc.)
 - ✅ **HTTP Callbacks**: Trigger HTTP callbacks to external URLs when mocks match (webhooks)
+- ✅ **Sequential Responses**: Return different responses in sequence (cycle or once mode)
+- ✅ **Request Recording**: Record real requests/responses and export as mocks
 - ✅ **Proxy Passthrough**: Forward unmatched requests to a backend server
 - ✅ **TLS Support**: Serve mocks over HTTPS with custom certificates
 
@@ -451,6 +453,153 @@ mocks:
 ```
 
 More examples available in `pmp-mock-http/examples/callbacks.yaml`.
+
+### Sequential Responses
+
+Return different responses in sequence for the same endpoint. Perfect for simulating multi-step processes, status changes, and progressive workflows.
+
+#### Cycle Mode (default)
+
+Responses repeat from the beginning after the last one:
+
+```yaml
+mocks:
+  - name: "Status Polling"
+    request:
+      uri: "/api/task/status"
+      method: "GET"
+    response:
+      sequence:
+        - status_code: 202
+          body: '{"status": "pending"}'
+        - status_code: 200
+          body: '{"status": "processing"}'
+        - status_code: 200
+          body: '{"status": "completed"}'
+      sequence_mode: "cycle"  # Repeats: pending -> processing -> completed -> pending ...
+```
+
+#### Once Mode
+
+Responses stop at the last one:
+
+```yaml
+mocks:
+  - name: "Account Setup"
+    request:
+      uri: "/api/onboarding/status"
+      method: "GET"
+    response:
+      sequence:
+        - status_code: 200
+          body: '{"step": "email_verification"}'
+        - status_code: 200
+          body: '{"step": "profile_setup"}'
+        - status_code: 200
+          body: '{"step": "complete"}'
+      sequence_mode: "once"  # Stays at "complete" after 3rd call
+```
+
+#### Use Cases
+
+- **Status polling**: Simulate async operations (pending → processing → done)
+- **Onboarding flows**: Multi-step user journeys
+- **Rate limiting**: Return success N times, then errors
+- **A/B testing**: Alternate between different responses
+- **Degradation testing**: Gradually increase error rates
+
+**Sequence Features:**
+- Each response can have different status codes, headers, body, and delay
+- Supports templates in sequence responses
+- Sequence counter resets on mock file reload
+- Thread-safe for concurrent requests
+
+More examples available in `mocks/sequence-examples.yaml`.
+
+### Request Recording & Replay
+
+Record real API traffic and convert it into reusable mocks. Perfect for capturing production API behavior and creating test fixtures.
+
+#### Starting Recording
+
+```bash
+# Start recording
+curl -X POST http://localhost:8083/__recording/start
+
+# Make requests to your API
+curl http://localhost:8083/api/users/123
+curl -X POST http://localhost:8083/api/orders -d '{"item":"widget"}'
+
+# Stop recording
+curl -X POST http://localhost:8083/__recording/stop
+```
+
+#### Exporting Recordings
+
+```bash
+# Export as YAML (default)
+curl http://localhost:8083/__recording/export > recorded-mocks.yaml
+
+# Export as JSON
+curl http://localhost:8083/__recording/export?format=json > recorded-mocks.json
+
+# Group by URI to create sequences
+curl "http://localhost:8083/__recording/export?group=uri" > recorded-sequences.yaml
+```
+
+#### Recording Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/__recording/start` | POST | Start recording requests/responses |
+| `/__recording/stop` | POST | Stop recording |
+| `/__recording/status` | GET | Get recording status and count |
+| `/__recording/clear` | POST | Clear all recordings |
+| `/__recording/export` | GET | Export as mocks (YAML or JSON) |
+| `/__recording/list` | GET | List all recorded requests |
+
+#### Export Options
+
+**Query Parameters:**
+- `format=json` - Export as JSON (default: YAML)
+- `group=uri` - Group multiple recordings of same endpoint into sequences
+
+**Grouping Example:**
+
+Without grouping, 3 requests to `/api/status` create 3 separate mocks.
+
+With `group=uri`, they're combined into a single mock with a sequence:
+
+```yaml
+mocks:
+  - name: "Recorded: GET /api/status (sequence)"
+    request:
+      uri: "/api/status"
+      method: "GET"
+    response:
+      sequence:
+        - status_code: 202
+          body: '{"status": "pending"}'
+        - status_code: 200
+          body: '{"status": "processing"}'
+        - status_code: 200
+          body: '{"status": "completed"}'
+      sequence_mode: "cycle"
+```
+
+#### Use Cases
+
+- **Production API capture**: Record real API behavior for testing
+- **Test fixtures**: Convert manual test runs into automated mocks
+- **API documentation**: Generate mock examples from real traffic
+- **Regression testing**: Capture before/after behavior for comparisons
+- **Quick mock creation**: Skip writing YAML by hand
+
+**Recording Tips:**
+- Recording is thread-safe and works with concurrent requests
+- Recordings persist until cleared or server restarts
+- Only matched mock responses are recorded (not 404s or proxy responses)
+- Large request/response bodies are captured in full
 
 ### Plugins System
 
