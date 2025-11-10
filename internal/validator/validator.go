@@ -118,6 +118,27 @@ func (v *Validator) validateRequest(req *models.Request, prefix string, result *
 	// Validate JavaScript
 	if req.JavaScript != "" {
 		vm := goja.New()
+
+		// Set up mock request object for validation
+		mockRequest := map[string]interface{}{
+			"uri":     "/test",
+			"method":  "GET",
+			"headers": map[string]string{},
+			"body":    "",
+		}
+
+		// Set up global object for validation
+		if err := vm.Set("global", vm.NewObject()); err != nil {
+			result.Valid = false
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to initialize global object: %v", prefix, err))
+		}
+
+		if err := vm.Set("request", mockRequest); err != nil {
+			result.Valid = false
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to set request object: %v", prefix, err))
+		}
+
+		// Now validate the JavaScript code
 		if _, err := vm.RunString(req.JavaScript); err != nil {
 			result.Valid = false
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: invalid JavaScript: %v", prefix, err))
