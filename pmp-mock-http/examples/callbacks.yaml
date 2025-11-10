@@ -1,0 +1,107 @@
+mocks:
+  - name: "Callback Example - Webhook Notification"
+    priority: 10
+    request:
+      uri: "/api/orders"
+      method: "POST"
+    response:
+      status_code: 202
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "status": "accepted",
+          "message": "Order received and will be processed"
+        }
+      callback:
+        url: "http://localhost:8082/webhook/order-received"
+        method: "POST"
+        headers:
+          Content-Type: "application/json"
+          X-Webhook-Source: "pmp-mock-http"
+        body: |
+          {
+            "event": "order.received",
+            "order_details": "Order received from {{ .RemoteAddr }}"
+          }
+
+  - name: "Callback Example - With Template in Callback"
+    priority: 10
+    request:
+      uri: "/api/payment"
+      method: "POST"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      template: true
+      body: |
+        {
+          "transaction_id": "{{ uuid }}",
+          "status": "completed",
+          "timestamp": "{{ datetime }}"
+        }
+      callback:
+        url: "http://localhost:8082/webhook/payment"
+        method: "POST"
+        headers:
+          Content-Type: "application/json"
+          X-Transaction-ID: "{{ uuid }}"
+        body: |
+          {
+            "event": "payment.completed",
+            "transaction_id": "{{ uuid }}",
+            "amount": {{ randomFloat 10.0 1000.0 }},
+            "currency": "USD",
+            "customer": {
+              "name": "{{ fullName }}",
+              "email": "{{ email }}"
+            },
+            "payment_method": "card",
+            "timestamp": {{ timestamp }},
+            "original_request": {
+              "method": "{{ .Method }}",
+              "uri": "{{ .URI }}",
+              "body": {{ .Body | printf "%q" }}
+            }
+          }
+
+  - name: "Callback Example - Multiple Callbacks Scenario"
+    priority: 10
+    request:
+      uri: "/api/signup"
+      method: "POST"
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+      template: true
+      body: |
+        {
+          "user_id": "{{ uuid }}",
+          "username": "{{ username }}",
+          "email": "{{ email }}",
+          "created_at": "{{ datetime }}",
+          "status": "pending_verification"
+        }
+      callback:
+        url: "http://localhost:8082/webhook/user-signup"
+        method: "POST"
+        headers:
+          Content-Type: "application/json"
+          X-Event-Type: "user.signup"
+        body: |
+          {
+            "event": "user.signup",
+            "user": {
+              "id": "{{ uuid }}",
+              "username": "{{ username }}",
+              "email": "{{ email }}",
+              "signup_ip": "{{ .RemoteAddr }}",
+              "signup_time": "{{ datetime }}"
+            },
+            "verification": {
+              "code": "{{ randomString 6 }}",
+              "expires_at": {{ timestamp }}
+            }
+          }

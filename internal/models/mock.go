@@ -44,7 +44,17 @@ type Response struct {
 	StatusCode int               `yaml:"status_code"`
 	Headers    map[string]string `yaml:"headers"`
 	Body       string            `yaml:"body"`
-	Delay      int               `yaml:"delay"` // Response delay in milliseconds
+	Delay      int               `yaml:"delay"`    // Response delay in milliseconds
+	Template   bool              `yaml:"template"` // If true, body is a Go template
+	Callback   *Callback         `yaml:"callback"` // Optional callback to trigger
+}
+
+// Callback defines an HTTP callback to trigger when a mock matches
+type Callback struct {
+	URL     string            `yaml:"url"`
+	Method  string            `yaml:"method"`  // HTTP method (default: POST)
+	Headers map[string]string `yaml:"headers"` // Headers to send
+	Body    string            `yaml:"body"`    // Body to send (can be a template)
 }
 
 // JavaScriptResponse represents a custom response from JavaScript evaluation

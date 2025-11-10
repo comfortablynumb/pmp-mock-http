@@ -1,0 +1,112 @@
+mocks:
+  - name: "Template Example - User Creation"
+    priority: 10
+    request:
+      uri: "/api/users"
+      method: "POST"
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+      template: true
+      body: |
+        {
+          "id": "{{ uuid }}",
+          "username": "{{ username }}",
+          "email": "{{ email }}",
+          "created_at": "{{ datetime }}",
+          "request_method": "{{ .Method }}",
+          "request_uri": "{{ .URI }}"
+        }
+
+  - name: "Template Example - Generate Random Data"
+    priority: 10
+    request:
+      uri: "/api/generate/user"
+      method: "GET"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      template: true
+      body: |
+        {
+          "user": {
+            "id": "{{ uuid }}",
+            "firstName": "{{ firstName }}",
+            "lastName": "{{ lastName }}",
+            "fullName": "{{ fullName }}",
+            "email": "{{ email }}",
+            "username": "{{ username }}",
+            "age": {{ randomInt 18 80 }},
+            "active": {{ randomBool }}
+          },
+          "address": {
+            "street": "{{ address }}",
+            "city": "{{ city }}",
+            "country": "{{ country }}",
+            "zipCode": "{{ zipCode }}"
+          },
+          "employment": {
+            "company": "{{ company }}",
+            "jobTitle": "{{ jobTitle }}"
+          },
+          "metadata": {
+            "ip": "{{ ipAddress }}",
+            "generatedAt": "{{ datetime }}",
+            "timestamp": {{ timestamp }}
+          }
+        }
+
+  - name: "Template Example - Echo Request Data"
+    priority: 10
+    request:
+      uri: "/api/echo"
+      method: "POST"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      template: true
+      body: |
+        {
+          "echo": {
+            "method": "{{ .Method }}",
+            "uri": "{{ .URI }}",
+            "path": "{{ .Path }}",
+            "query": "{{ .RawQuery }}",
+            "body": {{ .Body | printf "%q" }},
+            "remote_addr": "{{ .RemoteAddr }}"
+          },
+          "headers": {
+            {{- range $key, $value := .Headers }}
+            "{{ $key }}": "{{ $value }}"{{ if not (eq $key (index (keys $.Headers) (sub (len $.Headers) 1))) }},{{ end }}
+            {{- end }}
+          },
+          "generated_id": "{{ uuid }}",
+          "timestamp": {{ timestamp }}
+        }
+
+  - name: "Template Example - Dynamic Content Based on Request"
+    priority: 10
+    request:
+      uri: "/api/greet"
+      method: "POST"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "text/plain"
+      template: true
+      body: |
+        Hello! Your request was:
+        - Method: {{ .Method }}
+        - URI: {{ .URI }}
+        - From: {{ .RemoteAddr }}
+        - Body: {{ .Body }}
+
+        Generated data:
+        - Random Name: {{ fullName }}
+        - Random Email: {{ email }}
+        - Random City: {{ city }}, {{ country }}
+        - Session ID: {{ uuid }}
+        - Timestamp: {{ date }} at {{ datetime }}

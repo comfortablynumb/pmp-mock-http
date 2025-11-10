@@ -9,34 +9,42 @@ import (
 	"sync"
 	"time"
 
+	"github.com/comfortablynumb/pmp-mock-http/internal/callback"
 	"github.com/comfortablynumb/pmp-mock-http/internal/matcher"
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
+	"github.com/comfortablynumb/pmp-mock-http/internal/template"
 	"github.com/comfortablynumb/pmp-mock-http/internal/tracker"
 )
 
 // Server represents the mock HTTP server
 type Server struct {
-	port    int
-	matcher *matcher.Matcher
-	tracker *tracker.Tracker
-	mu      sync.RWMutex
+	port             int
+	matcher          *matcher.Matcher
+	tracker          *tracker.Tracker
+	templateRenderer *template.Renderer
+	callbackExecutor *callback.Executor
+	mu               sync.RWMutex
 }
 
 // NewServer creates a new mock server
 func NewServer(port int, mocks []models.Mock) *Server {
 	return &Server{
-		port:    port,
-		matcher: matcher.NewMatcher(mocks),
-		tracker: nil,
+		port:             port,
+		matcher:          matcher.NewMatcher(mocks),
+		tracker:          nil,
+		templateRenderer: template.NewRenderer(),
+		callbackExecutor: callback.NewExecutor(),
 	}
 }
 
 // NewServerWithTracker creates a new mock server with request tracking
 func NewServerWithTracker(port int, mocks []models.Mock, t *tracker.Tracker) *Server {
 	return &Server{
-		port:    port,
-		matcher: matcher.NewMatcher(mocks),
-		tracker: t,
+		port:             port,
+		matcher:          matcher.NewMatcher(mocks),
+		tracker:          t,
+		templateRenderer: template.NewRenderer(),
+		callbackExecutor: callback.NewExecutor(),
 	}
 }
 
@@ -119,6 +127,14 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Matched mock: %s\n", mock.Name)
 
+	// Create request data for templates and callbacks
+	requestData := template.NewRequestData(r, string(bodyBytes))
+
+	// Execute callback if specified
+	if mock.Response.Callback != nil {
+		s.callbackExecutor.Execute(mock.Response.Callback, requestData)
+	}
+
 	// Apply response delay if specified
 	if mock.Response.Delay > 0 {
 		time.Sleep(time.Duration(mock.Response.Delay) * time.Millisecond)
@@ -132,10 +148,19 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Set status code
 	w.WriteHeader(mock.Response.StatusCode)
 
-	// Write response body
+	// Render response body (with template if enabled)
 	responseBody := ""
 	if mock.Response.Body != "" {
 		responseBody = mock.Response.Body
+		if mock.Response.Template {
+			rendered, err := s.templateRenderer.Render(mock.Response.Body, requestData)
+			if err != nil {
+				log.Printf("Error rendering response template: %v\n", err)
+				// Fall back to the original body
+			} else {
+				responseBody = rendered
+			}
+		}
 		if _, err := w.Write([]byte(responseBody)); err != nil {
 			log.Printf("Error writing response body: %v\n", err)
 		}
