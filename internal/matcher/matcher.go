@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"regexp"
@@ -11,16 +12,19 @@ import (
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
 	"github.com/dop251/goja"
 	"github.com/tidwall/gjson"
+	"github.com/xeipuuv/gojsonschema"
 )
 
 // Matcher handles matching incoming requests to mock specifications
 type Matcher struct {
-	mocks       []models.Mock
-	globalVM    *goja.Runtime         // Persistent JS runtime for global state
-	globalState map[string]interface{} // Global state shared across JavaScript evaluations
-	stateMu     sync.RWMutex           // Mutex to protect global state
-	callCounts  map[string]int         // Track call counts for sequence responses
-	countMu     sync.Mutex             // Mutex to protect call counts
+	mocks          []models.Mock
+	globalVM       *goja.Runtime         // Persistent JS runtime for global state
+	globalState    map[string]interface{} // Global state shared across JavaScript evaluations
+	stateMu        sync.RWMutex           // Mutex to protect global state
+	callCounts     map[string]int         // Track call counts for sequence responses
+	countMu        sync.Mutex             // Mutex to protect call counts
+	activeScenario string                 // Currently active scenario (empty means all mocks)
+	scenarioMu     sync.RWMutex           // Mutex to protect scenario state
 }
 
 // NewMatcher creates a new request matcher
@@ -57,8 +61,18 @@ func (m *Matcher) FindMatch(r *http.Request) (*models.Mock, error) {
 	}
 	bodyStr := string(body)
 
+	// Get active scenario
+	m.scenarioMu.RLock()
+	activeScenario := m.activeScenario
+	m.scenarioMu.RUnlock()
+
 	// Try to match each mock in priority order
 	for _, mock := range m.mocks {
+		// Skip mocks that don't belong to the active scenario
+		if !m.belongsToScenario(&mock, activeScenario) {
+			continue
+		}
+
 		// For JavaScript evaluation, we need special handling
 		if mock.Request.JavaScript != "" {
 			matches, customResponse := m.evaluateJavaScript(r, bodyStr, mock.Request.JavaScript)
@@ -117,6 +131,13 @@ func (m *Matcher) matches(r *http.Request, body string, mock *models.Mock) bool 
 	// Match JSON path (if specified)
 	if len(mock.Request.JSONPath) > 0 {
 		if !m.matchJSONPath(body, mock.Request.JSONPath) {
+			return false
+		}
+	}
+
+	// Validate JSON schema (if specified)
+	if len(mock.Request.ValidateSchema) > 0 {
+		if !m.validateSchema(body, mock.Request.ValidateSchema) {
 			return false
 		}
 	}
@@ -244,6 +265,34 @@ func (m *Matcher) matchJSONPath(body string, matchers []models.JSONPathMatcher) 
 	}
 
 	return true
+}
+
+// validateSchema validates request body against a JSON schema
+func (m *Matcher) validateSchema(body string, schema map[string]interface{}) bool {
+	// Validate that the body is valid JSON
+	if !gjson.Valid(body) {
+		return false
+	}
+
+	// Convert schema map to JSON
+	schemaJSON, err := json.Marshal(schema)
+	if err != nil {
+		return false
+	}
+
+	// Create schema loader from the schema JSON
+	schemaLoader := gojsonschema.NewBytesLoader(schemaJSON)
+
+	// Create document loader from the request body
+	documentLoader := gojsonschema.NewStringLoader(body)
+
+	// Validate
+	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
+	if err != nil {
+		return false
+	}
+
+	return result.Valid()
 }
 
 // evaluateJavaScript evaluates JavaScript code to determine if request matches
@@ -374,4 +423,60 @@ func (m *Matcher) getSequentialResponse(mock *models.Mock) models.Response {
 		Template:   item.Template,
 		Callback:   item.Callback,
 	}
+}
+
+// belongsToScenario checks if a mock belongs to the given scenario
+func (m *Matcher) belongsToScenario(mock *models.Mock, scenario string) bool {
+	// If no scenario is active (empty string), all mocks are included
+	if scenario == "" {
+		return true
+	}
+
+	// If mock has no scenarios specified, it belongs to all scenarios
+	if len(mock.Scenarios) == 0 {
+		return true
+	}
+
+	// Check if the mock's scenarios list contains the active scenario
+	for _, s := range mock.Scenarios {
+		if s == scenario {
+			return true
+		}
+	}
+
+	return false
+}
+
+// SetScenario sets the active scenario
+func (m *Matcher) SetScenario(scenario string) {
+	m.scenarioMu.Lock()
+	defer m.scenarioMu.Unlock()
+	m.activeScenario = scenario
+}
+
+// GetActiveScenario returns the currently active scenario
+func (m *Matcher) GetActiveScenario() string {
+	m.scenarioMu.RLock()
+	defer m.scenarioMu.RUnlock()
+	return m.activeScenario
+}
+
+// GetAvailableScenarios returns a list of all unique scenarios across all mocks
+func (m *Matcher) GetAvailableScenarios() []string {
+	scenarioSet := make(map[string]bool)
+
+	for _, mock := range m.mocks {
+		for _, scenario := range mock.Scenarios {
+			if scenario != "" {
+				scenarioSet[scenario] = true
+			}
+		}
+	}
+
+	scenarios := make([]string, 0, len(scenarioSet))
+	for scenario := range scenarioSet {
+		scenarios = append(scenarios, scenario)
+	}
+
+	return scenarios
 }

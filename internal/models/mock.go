@@ -8,6 +8,7 @@ type MockSpec struct {
 // Mock represents a single mock endpoint definition
 type Mock struct {
 	Name        string            `yaml:"name"`
+	Scenarios   []string          `yaml:"scenarios"`  // Scenarios this mock belongs to (empty means all scenarios)
 	Request     Request           `yaml:"request"`
 	Response    Response          `yaml:"response"`
 	Priority    int               `yaml:"priority"` // Higher priority mocks are matched first
@@ -15,13 +16,14 @@ type Mock struct {
 
 // Request defines the matching criteria for incoming requests
 type Request struct {
-	URI        string            `yaml:"uri"`        // Can be exact match or regex
-	Method     string            `yaml:"method"`     // Can be exact match or regex
-	Headers    map[string]string `yaml:"headers"`    // Can be exact match or regex (both key and value)
-	Body       string            `yaml:"body"`       // Can be exact match or regex
-	IsRegex    RegexConfig       `yaml:"regex"`      // Specify which fields use regex
-	JSONPath   []JSONPathMatcher `yaml:"json_path"`  // GJSON path matchers for JSON bodies
-	JavaScript string            `yaml:"javascript"` // JavaScript code for custom matching logic
+	URI            string                 `yaml:"uri"`             // Can be exact match or regex
+	Method         string                 `yaml:"method"`          // Can be exact match or regex
+	Headers        map[string]string      `yaml:"headers"`         // Can be exact match or regex (both key and value)
+	Body           string                 `yaml:"body"`            // Can be exact match or regex
+	IsRegex        RegexConfig            `yaml:"regex"`           // Specify which fields use regex
+	JSONPath       []JSONPathMatcher      `yaml:"json_path"`       // GJSON path matchers for JSON bodies
+	JavaScript     string                 `yaml:"javascript"`      // JavaScript code for custom matching logic
+	ValidateSchema map[string]interface{} `yaml:"validate_schema"` // JSON Schema for request body validation
 }
 
 // RegexConfig specifies which request fields should use regex matching

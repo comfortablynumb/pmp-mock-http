@@ -1,0 +1,189 @@
+# Request Validation Examples
+# The validate_schema field uses JSON Schema to validate request bodies
+# Requests that don't match the schema will not trigger the mock
+
+mocks:
+  # Basic validation - require specific fields
+  - name: "Create User with Validation"
+    priority: 10
+    request:
+      uri: "/api/users"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+      validate_schema:
+        type: "object"
+        required: ["name", "email"]
+        properties:
+          name:
+            type: "string"
+            minLength: 1
+          email:
+            type: "string"
+            format: "email"
+          age:
+            type: "integer"
+            minimum: 0
+            maximum: 150
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "id": 123,
+          "message": "User created successfully"
+        }
+
+  # Validation with nested objects
+  - name: "Create Order with Nested Validation"
+    priority: 10
+    request:
+      uri: "/api/orders"
+      method: "POST"
+      validate_schema:
+        type: "object"
+        required: ["customer", "items", "total"]
+        properties:
+          customer:
+            type: "object"
+            required: ["id", "email"]
+            properties:
+              id:
+                type: "integer"
+              email:
+                type: "string"
+                format: "email"
+          items:
+            type: "array"
+            minItems: 1
+            items:
+              type: "object"
+              required: ["product_id", "quantity"]
+              properties:
+                product_id:
+                  type: "integer"
+                quantity:
+                  type: "integer"
+                  minimum: 1
+          total:
+            type: "number"
+            minimum: 0
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "order_id": 456,
+          "status": "confirmed"
+        }
+
+  # Validation with enum values
+  - name: "Update User Status with Enum"
+    priority: 10
+    request:
+      uri: "/api/users/123/status"
+      method: "PUT"
+      validate_schema:
+        type: "object"
+        required: ["status"]
+        properties:
+          status:
+            type: "string"
+            enum: ["active", "inactive", "suspended"]
+          reason:
+            type: "string"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "message": "Status updated successfully"
+        }
+
+  # Validation with pattern matching
+  - name: "Create API Key with Pattern Validation"
+    priority: 10
+    request:
+      uri: "/api/keys"
+      method: "POST"
+      validate_schema:
+        type: "object"
+        required: ["name", "permissions"]
+        properties:
+          name:
+            type: "string"
+            pattern: "^[a-zA-Z0-9_-]+$"
+            minLength: 3
+            maxLength: 50
+          permissions:
+            type: "array"
+            items:
+              type: "string"
+              enum: ["read", "write", "admin"]
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "api_key": "sk_test_1234567890",
+          "expires_at": "2025-01-01T00:00:00Z"
+        }
+
+  # Validation with additional properties control
+  - name: "Strict Validation - No Extra Fields"
+    priority: 10
+    request:
+      uri: "/api/strict"
+      method: "POST"
+      validate_schema:
+        type: "object"
+        required: ["field1", "field2"]
+        additionalProperties: false
+        properties:
+          field1:
+            type: "string"
+          field2:
+            type: "integer"
+    response:
+      status_code: 200
+      body: "Validation passed!"
+
+  # Complex validation with multiple types and conditions
+  - name: "Complex Webhook Validation"
+    priority: 10
+    request:
+      uri: "/api/webhooks"
+      method: "POST"
+      validate_schema:
+        type: "object"
+        required: ["event", "data", "timestamp"]
+        properties:
+          event:
+            type: "string"
+            enum: ["user.created", "user.updated", "user.deleted", "order.placed"]
+          data:
+            type: "object"
+          timestamp:
+            type: "string"
+            format: "date-time"
+          metadata:
+            type: "object"
+            properties:
+              source:
+                type: "string"
+              version:
+                type: "string"
+                pattern: "^v\\d+\\.\\d+\\.\\d+$"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "received": true,
+          "webhook_id": "wh_123456"
+        }
