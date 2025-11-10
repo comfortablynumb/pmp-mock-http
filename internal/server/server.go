@@ -12,6 +12,7 @@ import (
 	"github.com/comfortablynumb/pmp-mock-http/internal/callback"
 	"github.com/comfortablynumb/pmp-mock-http/internal/matcher"
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
+	"github.com/comfortablynumb/pmp-mock-http/internal/proxy"
 	"github.com/comfortablynumb/pmp-mock-http/internal/template"
 	"github.com/comfortablynumb/pmp-mock-http/internal/tracker"
 )
@@ -23,28 +24,49 @@ type Server struct {
 	tracker          *tracker.Tracker
 	templateRenderer *template.Renderer
 	callbackExecutor *callback.Executor
+	proxyClient      *proxy.Client
 	mu               sync.RWMutex
 }
 
 // NewServer creates a new mock server
-func NewServer(port int, mocks []models.Mock) *Server {
+func NewServer(port int, mocks []models.Mock, proxyConfig *proxy.Config) *Server {
+	var proxyClient *proxy.Client
+	if proxyConfig != nil {
+		var err error
+		proxyClient, err = proxy.NewClient(proxyConfig)
+		if err != nil {
+			log.Printf("Warning: failed to create proxy client: %v\n", err)
+		}
+	}
+
 	return &Server{
 		port:             port,
 		matcher:          matcher.NewMatcher(mocks),
 		tracker:          nil,
 		templateRenderer: template.NewRenderer(),
 		callbackExecutor: callback.NewExecutor(),
+		proxyClient:      proxyClient,
 	}
 }
 
 // NewServerWithTracker creates a new mock server with request tracking
-func NewServerWithTracker(port int, mocks []models.Mock, t *tracker.Tracker) *Server {
+func NewServerWithTracker(port int, mocks []models.Mock, t *tracker.Tracker, proxyConfig *proxy.Config) *Server {
+	var proxyClient *proxy.Client
+	if proxyConfig != nil {
+		var err error
+		proxyClient, err = proxy.NewClient(proxyConfig)
+		if err != nil {
+			log.Printf("Warning: failed to create proxy client: %v\n", err)
+		}
+	}
+
 	return &Server{
 		port:             port,
 		matcher:          matcher.NewMatcher(mocks),
 		tracker:          t,
 		templateRenderer: template.NewRenderer(),
 		callbackExecutor: callback.NewExecutor(),
+		proxyClient:      proxyClient,
 	}
 }
 
@@ -56,6 +78,16 @@ func (s *Server) Start() error {
 	log.Printf("Mock server listening on http://localhost%s\n", addr)
 
 	return http.ListenAndServe(addr, nil)
+}
+
+// StartTLS starts the HTTPS server with TLS
+func (s *Server) StartTLS(certFile, keyFile string) error {
+	http.HandleFunc("/", s.handleRequest)
+
+	addr := fmt.Sprintf(":%d", s.port)
+	log.Printf("Mock server listening on https://localhost%s (TLS enabled)\n", addr)
+
+	return http.ListenAndServeTLS(addr, certFile, keyFile, nil)
 }
 
 // handleRequest handles incoming HTTP requests
@@ -114,6 +146,29 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	if mock == nil {
 		log.Printf("No mock found for %s %s\n", r.Method, r.URL.Path)
+
+		// If proxy is configured, forward the request
+		if s.proxyClient != nil {
+			// Restore the body for the proxy to read
+			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+			log.Printf("Forwarding request to proxy\n")
+			if err := s.proxyClient.Forward(w, r); err != nil {
+				log.Printf("Proxy error: %v\n", err)
+				http.Error(w, "Proxy error", http.StatusBadGateway)
+				if s.tracker != nil {
+					s.tracker.Log(tracker.RequestLog{
+						Method: r.Method, URI: r.URL.RequestURI(), Headers: headers, Body: bodyStr,
+						Matched: false, StatusCode: http.StatusBadGateway,
+						Response: "Proxy error", RemoteAddr: r.RemoteAddr,
+					})
+				}
+			}
+			// Proxy handled the request, don't track it as not found
+			return
+		}
+
+		// No proxy configured, return 404
 		http.NotFound(w, r)
 		if s.tracker != nil {
 			s.tracker.Log(tracker.RequestLog{

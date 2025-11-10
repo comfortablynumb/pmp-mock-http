@@ -3,11 +3,13 @@ package server
 import (
 	"bytes"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
+	"github.com/comfortablynumb/pmp-mock-http/internal/proxy"
 )
 
 func TestServerBasicRequest(t *testing.T) {
@@ -28,7 +30,7 @@ func TestServerBasicRequest(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	req := httptest.NewRequest("GET", "/api/test", nil)
 	w := httptest.NewRecorder()
@@ -66,7 +68,7 @@ func TestServerNoMatch(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	req := httptest.NewRequest("GET", "/api/other", nil)
 	w := httptest.NewRecorder()
@@ -98,7 +100,7 @@ func TestServerPOSTRequest(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	body := bytes.NewBufferString(`{"name": "John"}`)
 	req := httptest.NewRequest("POST", "/api/users", body)
@@ -139,7 +141,7 @@ func TestServerResponseDelay(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	req := httptest.NewRequest("GET", "/api/slow", nil)
 	w := httptest.NewRecorder()
@@ -180,7 +182,7 @@ func TestServerMultipleHeaders(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	req := httptest.NewRequest("GET", "/api/test", nil)
 	w := httptest.NewRecorder()
@@ -219,7 +221,7 @@ func TestServerUpdateMocks(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, initialMocks)
+	srv := NewServer(8080, initialMocks, nil)
 
 	// Test initial state
 	req1 := httptest.NewRequest("GET", "/api/test", nil)
@@ -276,7 +278,7 @@ func TestServerEmptyBody(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	req := httptest.NewRequest("GET", "/api/test", nil)
 	w := httptest.NewRecorder()
@@ -331,7 +333,7 @@ func TestServerDifferentMethods(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	tests := []struct {
 		method         string
@@ -377,7 +379,7 @@ func TestServerConcurrentRequests(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	// Make concurrent requests
 	done := make(chan bool, 10)
@@ -418,7 +420,7 @@ func TestServerLargeRequestBody(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	// Create a large body (1MB)
 	largeBody := bytes.Repeat([]byte("a"), 1024*1024)
@@ -466,7 +468,7 @@ func TestServerVariousStatusCodes(t *testing.T) {
 				},
 			}
 
-			srv := NewServer(8080, mocks)
+			srv := NewServer(8080, mocks, nil)
 
 			req := httptest.NewRequest("GET", "/api/test", nil)
 			w := httptest.NewRecorder()
@@ -496,7 +498,7 @@ func TestServerConcurrentUpdates(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, initialMocks)
+	srv := NewServer(8080, initialMocks, nil)
 
 	// Concurrently update mocks and make requests
 	done := make(chan bool, 20)
@@ -553,7 +555,7 @@ func TestServerQueryParameters(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	// Request with query parameters
 	req := httptest.NewRequest("GET", "/api/search?q=test&limit=10", nil)
@@ -582,7 +584,7 @@ func TestServerSpecialCharactersInBody(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(8080, mocks)
+	srv := NewServer(8080, mocks, nil)
 
 	body := bytes.NewBufferString(`{"test": "special chars"}`)
 	req := httptest.NewRequest("POST", "/api/test", body)
@@ -593,5 +595,89 @@ func TestServerSpecialCharactersInBody(t *testing.T) {
 	resp := w.Result()
 	if resp.StatusCode != 200 {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerProxyPassthrough(t *testing.T) {
+	// Create a test backend server
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"proxied": true}`))
+	}))
+	defer backend.Close()
+
+	// Create a mock that won't match our request
+	mocks := []models.Mock{
+		{
+			Name: "Test Mock",
+			Request: models.Request{
+				URI:    "/api/matched",
+				Method: "GET",
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       `{"matched": true}`,
+			},
+		},
+	}
+
+	// Create proxy config
+	proxyConfig := &proxy.Config{
+		Target: backend.URL,
+	}
+
+	srv := NewServer(8080, mocks, proxyConfig)
+
+	// Make a request that doesn't match any mock
+	req := httptest.NewRequest("GET", "/api/unmatched", nil)
+	w := httptest.NewRecorder()
+
+	srv.handleRequest(w, req)
+
+	resp := w.Result()
+	body, _ := io.ReadAll(resp.Body)
+
+	// Should be proxied to backend
+	if resp.StatusCode != 200 {
+		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	}
+
+	expectedBody := `{"proxied": true}`
+	if string(body) != expectedBody {
+		t.Errorf("Expected body %s, got %s", expectedBody, string(body))
+	}
+}
+
+func TestServerProxyDisabled(t *testing.T) {
+	// Create a mock that won't match our request
+	mocks := []models.Mock{
+		{
+			Name: "Test Mock",
+			Request: models.Request{
+				URI:    "/api/matched",
+				Method: "GET",
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       `{"matched": true}`,
+			},
+		},
+	}
+
+	// No proxy config
+	srv := NewServer(8080, mocks, nil)
+
+	// Make a request that doesn't match any mock
+	req := httptest.NewRequest("GET", "/api/unmatched", nil)
+	w := httptest.NewRecorder()
+
+	srv.handleRequest(w, req)
+
+	resp := w.Result()
+
+	// Should return 404 when proxy is disabled
+	if resp.StatusCode != 404 {
+		t.Errorf("Expected status 404, got %d", resp.StatusCode)
 	}
 }

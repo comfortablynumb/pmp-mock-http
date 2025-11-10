@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/comfortablynumb/pmp-mock-http/internal/loader"
 	"github.com/comfortablynumb/pmp-mock-http/internal/plugins"
+	"github.com/comfortablynumb/pmp-mock-http/internal/proxy"
 	"github.com/comfortablynumb/pmp-mock-http/internal/server"
 	"github.com/comfortablynumb/pmp-mock-http/internal/tracker"
 	"github.com/comfortablynumb/pmp-mock-http/internal/ui"
@@ -35,6 +37,16 @@ func getEnvString(key string, defaultVal string) string {
 	return defaultVal
 }
 
+// getEnvBool gets a boolean value from environment variable, or returns the default
+func getEnvBool(key string, defaultVal bool) bool {
+	if val := os.Getenv(key); val != "" {
+		if boolVal, err := strconv.ParseBool(val); err == nil {
+			return boolVal
+		}
+	}
+	return defaultVal
+}
+
 var (
 	port                = flag.Int("port", getEnvInt("PORT", 8083), "HTTP server port")
 	uiPort              = flag.Int("ui-port", getEnvInt("UI_PORT", 8081), "UI dashboard port")
@@ -42,6 +54,12 @@ var (
 	pluginsDir          = flag.String("plugins-dir", getEnvString("PLUGINS_DIR", "plugins"), "Directory to store plugin repositories")
 	pluginList          = flag.String("plugins", getEnvString("PLUGINS", ""), "Comma-separated list of git repository URLs to clone as plugins")
 	pluginIncludeOnly   = flag.String("plugin-include-only", getEnvString("PLUGIN_INCLUDE_ONLY", ""), "Space-separated list of subdirectories from pmp-mock-http to include (e.g., 'openai stripe')")
+	proxyTarget         = flag.String("proxy-target", getEnvString("PROXY_TARGET", ""), "Target URL for proxy passthrough (e.g., 'http://api.example.com')")
+	proxyPreserveHost   = flag.Bool("proxy-preserve-host", getEnvBool("PROXY_PRESERVE_HOST", false), "Preserve the original Host header when proxying")
+	proxyTimeout        = flag.Int("proxy-timeout", getEnvInt("PROXY_TIMEOUT", 30), "Proxy request timeout in seconds")
+	tlsEnabled          = flag.Bool("tls", getEnvBool("TLS_ENABLED", false), "Enable TLS/HTTPS")
+	tlsCertFile         = flag.String("tls-cert", getEnvString("TLS_CERT_FILE", ""), "Path to TLS certificate file")
+	tlsKeyFile          = flag.String("tls-key", getEnvString("TLS_KEY_FILE", ""), "Path to TLS private key file")
 )
 
 func main() {
@@ -51,6 +69,12 @@ func main() {
 	log.Printf("Mock server port: %d\n", *port)
 	log.Printf("UI dashboard port: %d\n", *uiPort)
 	log.Printf("Mocks directory: %s\n", *mocksDir)
+	log.Printf("TLS enabled: %v\n", *tlsEnabled)
+	if *proxyTarget != "" {
+		log.Printf("Proxy target: %s\n", *proxyTarget)
+		log.Printf("Proxy preserve host: %v\n", *proxyPreserveHost)
+		log.Printf("Proxy timeout: %ds\n", *proxyTimeout)
+	}
 
 	// Parse plugin repositories
 	var pluginRepos []string
@@ -100,8 +124,18 @@ func main() {
 	// Create request tracker for UI dashboard
 	requestTracker := tracker.NewTracker(1000) // Keep last 1000 requests
 
-	// Create the mock server with tracker
-	srv := server.NewServerWithTracker(*port, mockLoader.GetMocks(), requestTracker)
+	// Create proxy configuration if proxy target is specified
+	var proxyConfig *proxy.Config
+	if *proxyTarget != "" {
+		proxyConfig = &proxy.Config{
+			Target:       *proxyTarget,
+			PreserveHost: *proxyPreserveHost,
+			Timeout:      time.Duration(*proxyTimeout) * time.Second,
+		}
+	}
+
+	// Create the mock server with tracker and proxy config
+	srv := server.NewServerWithTracker(*port, mockLoader.GetMocks(), requestTracker, proxyConfig)
 
 	// Create and start the UI server
 	uiServer := ui.NewServer(*uiPort, requestTracker)
@@ -145,7 +179,16 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		if err := srv.Start(); err != nil {
+		var err error
+		if *tlsEnabled {
+			if *tlsCertFile == "" || *tlsKeyFile == "" {
+				log.Fatalf("TLS enabled but certificate or key file not specified\n")
+			}
+			err = srv.StartTLS(*tlsCertFile, *tlsKeyFile)
+		} else {
+			err = srv.Start()
+		}
+		if err != nil {
 			log.Fatalf("Server error: %v\n", err)
 		}
 	}()
