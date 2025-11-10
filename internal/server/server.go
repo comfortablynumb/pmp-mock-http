@@ -286,10 +286,12 @@ func (s *Server) handleRecordingStart(w http.ResponseWriter, r *http.Request) {
 	s.recorder.Start()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "recording",
 		"message": "Recording started",
-	})
+	}); err != nil {
+		log.Printf("Error encoding response: %v\n", err)
+	}
 }
 
 // handleRecordingStop handles stopping the recording
@@ -303,11 +305,13 @@ func (s *Server) handleRecordingStop(w http.ResponseWriter, r *http.Request) {
 	count := s.recorder.Count()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "stopped",
 		"message": "Recording stopped",
 		"count":   count,
-	})
+	}); err != nil {
+		log.Printf("Error encoding response: %v\n", err)
+	}
 }
 
 // handleRecordingStatus handles getting the recording status
@@ -319,10 +323,12 @@ func (s *Server) handleRecordingStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"enabled": s.recorder.IsEnabled(),
 		"count":   s.recorder.Count(),
-	})
+	}); err != nil {
+		log.Printf("Error encoding response: %v\n", err)
+	}
 }
 
 // handleRecordingClear handles clearing all recordings
@@ -335,10 +341,12 @@ func (s *Server) handleRecordingClear(w http.ResponseWriter, r *http.Request) {
 	s.recorder.Clear()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "cleared",
 		"message": "All recordings cleared",
-	})
+	}); err != nil {
+		log.Printf("Error encoding response: %v\n", err)
+	}
 }
 
 // handleRecordingExport handles exporting recordings as mocks
@@ -358,12 +366,16 @@ func (s *Server) handleRecordingExport(w http.ResponseWriter, r *http.Request) {
 	if format == "json" {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", "attachment; filename=recorded-mocks.json")
-		json.NewEncoder(w).Encode(mockSpec)
+		if err := json.NewEncoder(w).Encode(mockSpec); err != nil {
+			log.Printf("Error encoding JSON response: %v\n", err)
+		}
 	} else {
 		// Default to YAML
 		w.Header().Set("Content-Type", "application/x-yaml")
 		w.Header().Set("Content-Disposition", "attachment; filename=recorded-mocks.yaml")
-		yaml.NewEncoder(w).Encode(mockSpec)
+		if err := yaml.NewEncoder(w).Encode(mockSpec); err != nil {
+			log.Printf("Error encoding YAML response: %v\n", err)
+		}
 	}
 }
 
@@ -377,8 +389,10 @@ func (s *Server) handleRecordingList(w http.ResponseWriter, r *http.Request) {
 	recordings := s.recorder.GetRecordings()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"count":      len(recordings),
 		"recordings": recordings,
-	})
+	}); err != nil {
+		log.Printf("Error encoding response: %v\n", err)
+	}
 }
