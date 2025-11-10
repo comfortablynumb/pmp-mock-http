@@ -22,6 +22,10 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 - ✅ **Template Responses**: Use Go templates to generate dynamic responses with access to request data
 - ✅ **Fake Data Generation**: Built-in template functions for generating realistic fake data (names, emails, UUIDs, etc.)
 - ✅ **HTTP Callbacks**: Trigger HTTP callbacks to external URLs when mocks match (webhooks)
+- ✅ **Sequential Responses**: Return different responses in sequence (cycle or once mode)
+- ✅ **Request Recording**: Record real requests/responses and export as mocks
+- ✅ **Proxy Passthrough**: Forward unmatched requests to a backend server
+- ✅ **TLS Support**: Serve mocks over HTTPS with custom certificates
 
 ## Installation
 
@@ -92,6 +96,12 @@ Configuration values can be set via environment variables or command-line flags.
 | `PLUGINS_DIR` | plugins | Directory to store plugin repositories |
 | `PLUGINS` | "" | Comma-separated list of git repository URLs to clone as plugins |
 | `PLUGIN_INCLUDE_ONLY` | "" | Space-separated list of subdirectories from pmp-mock-http to include |
+| `PROXY_TARGET` | "" | Target URL for proxy passthrough (e.g., "http://api.example.com") |
+| `PROXY_PRESERVE_HOST` | false | Preserve the original Host header when proxying |
+| `PROXY_TIMEOUT` | 30 | Proxy request timeout in seconds |
+| `TLS_ENABLED` | false | Enable TLS/HTTPS |
+| `TLS_CERT_FILE` | "" | Path to TLS certificate file |
+| `TLS_KEY_FILE` | "" | Path to TLS private key file |
 
 #### Command Line Flags
 
@@ -103,6 +113,12 @@ Configuration values can be set via environment variables or command-line flags.
 | `-plugins-dir` | `PLUGINS_DIR` | Directory to store plugin repositories |
 | `-plugins` | `PLUGINS` | Comma-separated list of git repository URLs to clone as plugins |
 | `-plugin-include-only` | `PLUGIN_INCLUDE_ONLY` | Space-separated list of subdirectories from pmp-mock-http to include |
+| `-proxy-target` | `PROXY_TARGET` | Target URL for proxy passthrough |
+| `-proxy-preserve-host` | `PROXY_PRESERVE_HOST` | Preserve original Host header when proxying |
+| `-proxy-timeout` | `PROXY_TIMEOUT` | Proxy request timeout in seconds |
+| `-tls` | `TLS_ENABLED` | Enable TLS/HTTPS |
+| `-tls-cert` | `TLS_CERT_FILE` | Path to TLS certificate file |
+| `-tls-key` | `TLS_KEY_FILE` | Path to TLS private key file |
 
 **Examples:**
 
@@ -135,6 +151,136 @@ The server automatically starts a web dashboard on port 8081 that provides real-
 ```bash
 # Custom UI port
 ./pmp-mock-http --ui-port 9000
+```
+
+### Proxy Passthrough Mode
+
+When a request doesn't match any mock, you can optionally forward it to a real backend server. This is useful for:
+
+- **Partial mocking**: Mock some endpoints while proxying others to the real API
+- **Development**: Test against a real backend for non-mocked endpoints
+- **Gradual migration**: Progressively add mocks without breaking existing flows
+
+#### Basic Proxy Usage
+
+```bash
+# Forward unmatched requests to a backend
+./pmp-mock-http --proxy-target http://api.example.com
+
+# Preserve the original Host header
+./pmp-mock-http --proxy-target http://api.example.com --proxy-preserve-host
+
+# Set custom timeout (default: 30 seconds)
+./pmp-mock-http --proxy-target http://api.example.com --proxy-timeout 60
+
+# Using environment variables
+export PROXY_TARGET=http://api.example.com
+export PROXY_PRESERVE_HOST=true
+./pmp-mock-http
+```
+
+#### How Proxy Works
+
+1. Request arrives at the mock server
+2. Mocks are checked in priority order
+3. If a mock matches → mock response is returned
+4. If no mock matches:
+   - **With proxy enabled** → request is forwarded to the proxy target
+   - **Without proxy** → 404 response is returned
+
+#### Proxy Headers
+
+The proxy automatically adds standard forwarding headers:
+- `X-Forwarded-For`: Client IP address
+- `X-Forwarded-Proto`: Original request protocol (http/https)
+- `X-Forwarded-Host`: Original Host header
+
+#### Docker with Proxy
+
+```bash
+# Proxy to a backend service
+docker run -p 8080:8080 -p 8081:8081 \
+  -v $(pwd)/mocks:/mocks \
+  -e PROXY_TARGET=http://backend-api:8080 \
+  pmp-mock-http
+
+# With host preservation
+docker run -p 8080:8080 -p 8081:8081 \
+  -v $(pwd)/mocks:/mocks \
+  -e PROXY_TARGET=http://backend-api:8080 \
+  -e PROXY_PRESERVE_HOST=true \
+  pmp-mock-http
+```
+
+### TLS/HTTPS Support
+
+Enable TLS to serve mocks over HTTPS with your own certificates.
+
+#### Generating Self-Signed Certificates (for testing)
+
+```bash
+# Generate a self-signed certificate
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes \
+  -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+```
+
+#### Basic TLS Usage
+
+```bash
+# Enable TLS with certificate files
+./pmp-mock-http --tls --tls-cert cert.pem --tls-key key.pem
+
+# Server will now listen on https://localhost:8083
+curl -k https://localhost:8083/api/test
+
+# Using environment variables
+export TLS_ENABLED=true
+export TLS_CERT_FILE=cert.pem
+export TLS_KEY_FILE=key.pem
+./pmp-mock-http
+```
+
+#### Docker with TLS
+
+```bash
+# Mount certificate files
+docker run -p 8443:8080 -p 8081:8081 \
+  -v $(pwd)/mocks:/mocks \
+  -v $(pwd)/certs:/certs \
+  -e TLS_ENABLED=true \
+  -e TLS_CERT_FILE=/certs/cert.pem \
+  -e TLS_KEY_FILE=/certs/key.pem \
+  pmp-mock-http
+
+# Access via HTTPS
+curl -k https://localhost:8443/api/test
+```
+
+#### Production TLS
+
+For production, use certificates from a trusted Certificate Authority (CA) like Let's Encrypt:
+
+```bash
+# Using Let's Encrypt certificates
+./pmp-mock-http \
+  --tls \
+  --tls-cert /etc/letsencrypt/live/yourdomain.com/fullchain.pem \
+  --tls-key /etc/letsencrypt/live/yourdomain.com/privkey.pem \
+  --port 443
+```
+
+#### Combining Proxy and TLS
+
+You can use both features together:
+
+```bash
+# HTTPS mock server with proxy fallback
+./pmp-mock-http \
+  --tls \
+  --tls-cert cert.pem \
+  --tls-key key.pem \
+  --proxy-target https://api.example.com \
+  --port 443
 ```
 
 ### Template Responses
@@ -307,6 +453,153 @@ mocks:
 ```
 
 More examples available in `pmp-mock-http/examples/callbacks.yaml`.
+
+### Sequential Responses
+
+Return different responses in sequence for the same endpoint. Perfect for simulating multi-step processes, status changes, and progressive workflows.
+
+#### Cycle Mode (default)
+
+Responses repeat from the beginning after the last one:
+
+```yaml
+mocks:
+  - name: "Status Polling"
+    request:
+      uri: "/api/task/status"
+      method: "GET"
+    response:
+      sequence:
+        - status_code: 202
+          body: '{"status": "pending"}'
+        - status_code: 200
+          body: '{"status": "processing"}'
+        - status_code: 200
+          body: '{"status": "completed"}'
+      sequence_mode: "cycle"  # Repeats: pending -> processing -> completed -> pending ...
+```
+
+#### Once Mode
+
+Responses stop at the last one:
+
+```yaml
+mocks:
+  - name: "Account Setup"
+    request:
+      uri: "/api/onboarding/status"
+      method: "GET"
+    response:
+      sequence:
+        - status_code: 200
+          body: '{"step": "email_verification"}'
+        - status_code: 200
+          body: '{"step": "profile_setup"}'
+        - status_code: 200
+          body: '{"step": "complete"}'
+      sequence_mode: "once"  # Stays at "complete" after 3rd call
+```
+
+#### Use Cases
+
+- **Status polling**: Simulate async operations (pending → processing → done)
+- **Onboarding flows**: Multi-step user journeys
+- **Rate limiting**: Return success N times, then errors
+- **A/B testing**: Alternate between different responses
+- **Degradation testing**: Gradually increase error rates
+
+**Sequence Features:**
+- Each response can have different status codes, headers, body, and delay
+- Supports templates in sequence responses
+- Sequence counter resets on mock file reload
+- Thread-safe for concurrent requests
+
+More examples available in `mocks/sequence-examples.yaml`.
+
+### Request Recording & Replay
+
+Record real API traffic and convert it into reusable mocks. Perfect for capturing production API behavior and creating test fixtures.
+
+#### Starting Recording
+
+```bash
+# Start recording
+curl -X POST http://localhost:8083/__recording/start
+
+# Make requests to your API
+curl http://localhost:8083/api/users/123
+curl -X POST http://localhost:8083/api/orders -d '{"item":"widget"}'
+
+# Stop recording
+curl -X POST http://localhost:8083/__recording/stop
+```
+
+#### Exporting Recordings
+
+```bash
+# Export as YAML (default)
+curl http://localhost:8083/__recording/export > recorded-mocks.yaml
+
+# Export as JSON
+curl http://localhost:8083/__recording/export?format=json > recorded-mocks.json
+
+# Group by URI to create sequences
+curl "http://localhost:8083/__recording/export?group=uri" > recorded-sequences.yaml
+```
+
+#### Recording Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/__recording/start` | POST | Start recording requests/responses |
+| `/__recording/stop` | POST | Stop recording |
+| `/__recording/status` | GET | Get recording status and count |
+| `/__recording/clear` | POST | Clear all recordings |
+| `/__recording/export` | GET | Export as mocks (YAML or JSON) |
+| `/__recording/list` | GET | List all recorded requests |
+
+#### Export Options
+
+**Query Parameters:**
+- `format=json` - Export as JSON (default: YAML)
+- `group=uri` - Group multiple recordings of same endpoint into sequences
+
+**Grouping Example:**
+
+Without grouping, 3 requests to `/api/status` create 3 separate mocks.
+
+With `group=uri`, they're combined into a single mock with a sequence:
+
+```yaml
+mocks:
+  - name: "Recorded: GET /api/status (sequence)"
+    request:
+      uri: "/api/status"
+      method: "GET"
+    response:
+      sequence:
+        - status_code: 202
+          body: '{"status": "pending"}'
+        - status_code: 200
+          body: '{"status": "processing"}'
+        - status_code: 200
+          body: '{"status": "completed"}'
+      sequence_mode: "cycle"
+```
+
+#### Use Cases
+
+- **Production API capture**: Record real API behavior for testing
+- **Test fixtures**: Convert manual test runs into automated mocks
+- **API documentation**: Generate mock examples from real traffic
+- **Regression testing**: Capture before/after behavior for comparisons
+- **Quick mock creation**: Skip writing YAML by hand
+
+**Recording Tips:**
+- Recording is thread-safe and works with concurrent requests
+- Recordings persist until cleared or server restarts
+- Only matched mock responses are recorded (not 404s or proxy responses)
+- Large request/response bodies are captured in full
 
 ### Plugins System
 
