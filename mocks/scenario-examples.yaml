@@ -1,0 +1,128 @@
+# Scenario Examples
+# Scenarios allow grouping mocks into different contexts
+# Switch between scenarios using: POST /__scenario/set?scenario=happy_path
+
+mocks:
+  # Mocks for the "happy_path" scenario
+  - name: "Get User - Success"
+    scenarios: ["happy_path", "default"]
+    priority: 10
+    request:
+      uri: "/api/users/123"
+      method: "GET"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "id": 123,
+          "name": "John Doe",
+          "email": "john@example.com",
+          "status": "active"
+        }
+
+  - name: "Create Order - Success"
+    scenarios: ["happy_path", "default"]
+    priority: 10
+    request:
+      uri: "/api/orders"
+      method: "POST"
+    response:
+      status_code: 201
+      headers:
+        Content-Type: "application/json"
+        Location: "/api/orders/456"
+      body: |
+        {
+          "id": 456,
+          "status": "created",
+          "total": 99.99
+        }
+
+  # Mocks for the "error_state" scenario
+  - name: "Get User - Not Found"
+    scenarios: ["error_state"]
+    priority: 10
+    request:
+      uri: "/api/users/123"
+      method: "GET"
+    response:
+      status_code: 404
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "error": "User not found",
+          "code": "USER_NOT_FOUND"
+        }
+
+  - name: "Create Order - Payment Failed"
+    scenarios: ["error_state"]
+    priority: 10
+    request:
+      uri: "/api/orders"
+      method: "POST"
+    response:
+      status_code: 402
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "error": "Payment failed",
+          "code": "PAYMENT_FAILED"
+        }
+
+  # Mocks for the "slow_response" scenario
+  - name: "Get User - Slow"
+    scenarios: ["slow_response"]
+    priority: 10
+    request:
+      uri: "/api/users/123"
+      method: "GET"
+    response:
+      status_code: 200
+      delay: 5000  # 5 second delay
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "id": 123,
+          "name": "John Doe",
+          "email": "john@example.com"
+        }
+
+  # Mock with no scenario specified - available in ALL scenarios
+  - name: "Health Check"
+    priority: 10
+    request:
+      uri: "/health"
+      method: "GET"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "status": "healthy",
+          "timestamp": "2024-01-01T00:00:00Z"
+        }
+
+  # Mock belonging to multiple scenarios
+  - name: "Get Products"
+    scenarios: ["happy_path", "slow_response"]
+    priority: 10
+    request:
+      uri: "/api/products"
+      method: "GET"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "products": [
+            {"id": 1, "name": "Widget"},
+            {"id": 2, "name": "Gadget"}
+          ]
+        }

@@ -24,6 +24,8 @@ Part of the Poor Man's Platform (PMP) ecosystem - if a dependency of your app us
 - ✅ **HTTP Callbacks**: Trigger HTTP callbacks to external URLs when mocks match (webhooks)
 - ✅ **Sequential Responses**: Return different responses in sequence (cycle or once mode)
 - ✅ **Request Recording**: Record real requests/responses and export as mocks
+- ✅ **Scenario Mode**: Organize mocks into scenarios and switch between them dynamically
+- ✅ **Request Validation**: Validate request bodies against JSON Schema
 - ✅ **Proxy Passthrough**: Forward unmatched requests to a backend server
 - ✅ **TLS Support**: Serve mocks over HTTPS with custom certificates
 
@@ -600,6 +602,230 @@ mocks:
 - Recordings persist until cleared or server restarts
 - Only matched mock responses are recorded (not 404s or proxy responses)
 - Large request/response bodies are captured in full
+
+### Scenario Mode
+
+Organize mocks into different scenarios and switch between them dynamically. Perfect for testing different application states, error conditions, or workflows.
+
+#### Defining Scenarios
+
+Add a `scenarios` field to your mocks to tag them with scenario names:
+
+```yaml
+mocks:
+  # Happy path scenario
+  - name: "Get User - Success"
+    scenarios: ["happy_path", "default"]
+    request:
+      uri: "/api/users/123"
+      method: "GET"
+    response:
+      status_code: 200
+      body: |
+        {
+          "id": 123,
+          "name": "John Doe",
+          "status": "active"
+        }
+
+  # Error scenario
+  - name: "Get User - Not Found"
+    scenarios: ["error_state"]
+    request:
+      uri: "/api/users/123"
+      method: "GET"
+    response:
+      status_code: 404
+      body: |
+        {
+          "error": "User not found"
+        }
+
+  # Available in ALL scenarios (no scenarios field)
+  - name: "Health Check"
+    request:
+      uri: "/health"
+      method: "GET"
+    response:
+      status_code: 200
+      body: '{"status": "healthy"}'
+```
+
+#### Switching Scenarios
+
+Use the scenario endpoints to control which scenario is active:
+
+```bash
+# List all available scenarios
+curl http://localhost:8083/__scenario/list
+
+# Get currently active scenario
+curl http://localhost:8083/__scenario/active
+
+# Set active scenario
+curl -X POST "http://localhost:8083/__scenario/set?scenario=happy_path"
+
+# Or using request body
+curl -X POST http://localhost:8083/__scenario/set \
+  -H "Content-Type: application/json" \
+  -d '{"scenario":"error_state"}'
+
+# Reset to show all mocks
+curl -X POST "http://localhost:8083/__scenario/set?scenario=all"
+```
+
+#### Scenario Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/__scenario/list` | GET | List all available scenarios |
+| `/__scenario/active` | GET | Get currently active scenario |
+| `/__scenario/set` | POST | Set active scenario (via query param or body) |
+
+#### Scenario Behavior
+
+- **No scenario set (default)**: All mocks are active
+- **Scenario set**: Only mocks tagged with that scenario (or no scenario tag) are active
+- **Multiple scenarios**: A mock can belong to multiple scenarios by listing them in the array
+- **Priority**: When multiple mocks match in a scenario, priority determines which one wins
+
+#### Use Cases
+
+- **Environment simulation**: Switch between dev/staging/prod behaviors
+- **Error injection**: Test error handling by switching to error scenarios
+- **Feature flags**: Enable/disable features by scenario
+- **A/B testing**: Test different response variations
+- **Progressive workflows**: Model multi-step processes with different scenarios
+
+More examples available in `mocks/scenario-examples.yaml`.
+
+### Request Validation
+
+Validate incoming request bodies against JSON Schema before matching mocks. Requests that don't match the schema will be rejected and won't trigger the mock.
+
+#### Basic Validation
+
+Add a `validate_schema` field to your request definition:
+
+```yaml
+mocks:
+  - name: "Create User with Validation"
+    request:
+      uri: "/api/users"
+      method: "POST"
+      validate_schema:
+        type: "object"
+        required: ["name", "email"]
+        properties:
+          name:
+            type: "string"
+            minLength: 1
+          email:
+            type: "string"
+            format: "email"
+          age:
+            type: "integer"
+            minimum: 0
+            maximum: 150
+    response:
+      status_code: 201
+      body: '{"id": 123, "message": "User created"}'
+```
+
+#### Complex Validation
+
+Support for nested objects, arrays, enums, and patterns:
+
+```yaml
+mocks:
+  - name: "Create Order with Validation"
+    request:
+      uri: "/api/orders"
+      method: "POST"
+      validate_schema:
+        type: "object"
+        required: ["customer", "items", "total"]
+        properties:
+          customer:
+            type: "object"
+            required: ["id", "email"]
+            properties:
+              id:
+                type: "integer"
+              email:
+                type: "string"
+                format: "email"
+          items:
+            type: "array"
+            minItems: 1
+            items:
+              type: "object"
+              required: ["product_id", "quantity"]
+              properties:
+                product_id:
+                  type: "integer"
+                quantity:
+                  type: "integer"
+                  minimum: 1
+          total:
+            type: "number"
+            minimum: 0
+    response:
+      status_code: 201
+      body: '{"order_id": 456, "status": "confirmed"}'
+```
+
+#### Validation with Enums and Patterns
+
+```yaml
+mocks:
+  - name: "Update Status with Enum"
+    request:
+      uri: "/api/users/123/status"
+      method: "PUT"
+      validate_schema:
+        type: "object"
+        required: ["status"]
+        properties:
+          status:
+            type: "string"
+            enum: ["active", "inactive", "suspended"]
+          reason:
+            type: "string"
+            pattern: "^[a-zA-Z0-9\\s]+$"
+    response:
+      status_code: 200
+      body: '{"message": "Status updated"}'
+```
+
+#### Validation Features
+
+- **JSON Schema Draft 7**: Full support for JSON Schema validation
+- **Type validation**: string, number, integer, boolean, object, array, null
+- **Format validation**: email, date-time, uri, uuid, ipv4, ipv6, etc.
+- **String constraints**: minLength, maxLength, pattern (regex)
+- **Number constraints**: minimum, maximum, multipleOf
+- **Array constraints**: minItems, maxItems, uniqueItems, items schema
+- **Object constraints**: required, properties, additionalProperties
+- **Enum values**: Restrict to specific allowed values
+- **Nested schemas**: Validate complex nested structures
+
+#### Validation Behavior
+
+- If validation fails, the mock **will not match**
+- No automatic error response is generated - you can define a fallback mock
+- Validation only applies if `validate_schema` is specified
+- Validation is performed before other matching logic (URI, method, headers, etc.)
+
+#### Use Cases
+
+- **API contract testing**: Ensure clients send correctly formatted requests
+- **Input validation**: Reject malformed data before processing
+- **Documentation**: Schema serves as self-documenting API requirements
+- **Type safety**: Catch type mismatches early in testing
+- **Development feedback**: Get immediate validation errors during development
+
+More examples available in `mocks/validation-examples.yaml`.
 
 ### Plugins System
 

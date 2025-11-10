@@ -1239,3 +1239,297 @@ func TestSequenceResetOnMockUpdate(t *testing.T) {
 		t.Errorf("Expected 'first' (after reset), got '%s'", mock2.Response.Body)
 	}
 }
+
+func TestScenarioFiltering(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name:      "Happy Path Mock",
+			Scenarios: []string{"happy_path"},
+			Priority:  10,
+			Request: models.Request{
+				URI:    "/api/test",
+				Method: "GET",
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       "success",
+			},
+		},
+		{
+			Name:      "Error Mock",
+			Scenarios: []string{"error_state"},
+			Priority:  10,
+			Request: models.Request{
+				URI:    "/api/test",
+				Method: "GET",
+			},
+			Response: models.Response{
+				StatusCode: 500,
+				Body:       "error",
+			},
+		},
+		{
+			Name:     "Default Mock",
+			Priority: 5, // Lower priority
+			Request: models.Request{
+				URI:    "/api/test",
+				Method: "GET",
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       "default",
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// Test with happy_path scenario
+	matcher.SetScenario("happy_path")
+	req1 := httptest.NewRequest("GET", "/api/test", nil)
+	mock1, err := matcher.FindMatch(req1)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock1.Response.Body != "success" {
+		t.Errorf("Expected 'success', got '%s'", mock1.Response.Body)
+	}
+
+	// Test with error_state scenario
+	matcher.SetScenario("error_state")
+	req2 := httptest.NewRequest("GET", "/api/test", nil)
+	mock2, err := matcher.FindMatch(req2)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock2.Response.Body != "error" {
+		t.Errorf("Expected 'error', got '%s'", mock2.Response.Body)
+	}
+
+	// Test with no scenario (all mocks)
+	matcher.SetScenario("")
+	req3 := httptest.NewRequest("GET", "/api/test", nil)
+	mock3, err := matcher.FindMatch(req3)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	// Should match the highest priority mock (Happy Path Mock)
+	if mock3.Response.Body != "success" {
+		t.Errorf("Expected 'success', got '%s'", mock3.Response.Body)
+	}
+}
+
+func TestScenarioMultipleTags(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name:      "Multi-Scenario Mock",
+			Scenarios: []string{"scenario_a", "scenario_b"},
+			Priority:  10,
+			Request: models.Request{
+				URI:    "/api/test",
+				Method: "GET",
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       "multi",
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// Should match in scenario_a
+	matcher.SetScenario("scenario_a")
+	req1 := httptest.NewRequest("GET", "/api/test", nil)
+	mock1, err := matcher.FindMatch(req1)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock1 == nil {
+		t.Fatal("Expected match in scenario_a")
+	}
+
+	// Should match in scenario_b
+	matcher.SetScenario("scenario_b")
+	req2 := httptest.NewRequest("GET", "/api/test", nil)
+	mock2, err := matcher.FindMatch(req2)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock2 == nil {
+		t.Fatal("Expected match in scenario_b")
+	}
+
+	// Should not match in scenario_c
+	matcher.SetScenario("scenario_c")
+	req3 := httptest.NewRequest("GET", "/api/test", nil)
+	mock3, err := matcher.FindMatch(req3)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock3 != nil {
+		t.Error("Expected no match in scenario_c")
+	}
+}
+
+func TestGetAvailableScenarios(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name:      "Mock 1",
+			Scenarios: []string{"happy_path", "test"},
+			Request:   models.Request{URI: "/test1"},
+		},
+		{
+			Name:      "Mock 2",
+			Scenarios: []string{"error_state"},
+			Request:   models.Request{URI: "/test2"},
+		},
+		{
+			Name:      "Mock 3",
+			Scenarios: []string{"happy_path"},
+			Request:   models.Request{URI: "/test3"},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+	scenarios := matcher.GetAvailableScenarios()
+
+	// Should have 3 unique scenarios
+	if len(scenarios) != 3 {
+		t.Errorf("Expected 3 scenarios, got %d", len(scenarios))
+	}
+
+	// Check that all scenarios are present
+	scenarioMap := make(map[string]bool)
+	for _, s := range scenarios {
+		scenarioMap[s] = true
+	}
+
+	if !scenarioMap["happy_path"] {
+		t.Error("Expected 'happy_path' scenario")
+	}
+	if !scenarioMap["error_state"] {
+		t.Error("Expected 'error_state' scenario")
+	}
+	if !scenarioMap["test"] {
+		t.Error("Expected 'test' scenario")
+	}
+}
+
+func TestValidateSchemaBasic(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name:     "Validated Mock",
+			Priority: 10,
+			Request: models.Request{
+				URI:    "/api/users",
+				Method: "POST",
+				ValidateSchema: map[string]interface{}{
+					"type": "object",
+					"required": []interface{}{"name", "email"},
+					"properties": map[string]interface{}{
+						"name": map[string]interface{}{
+							"type": "string",
+						},
+						"email": map[string]interface{}{
+							"type": "string",
+						},
+					},
+				},
+			},
+			Response: models.Response{
+				StatusCode: 201,
+				Body:       "created",
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// Valid request
+	validBody := `{"name": "John", "email": "john@example.com"}`
+	req1 := httptest.NewRequest("POST", "/api/users", strings.NewReader(validBody))
+	mock1, err := matcher.FindMatch(req1)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock1 == nil {
+		t.Fatal("Expected match for valid request")
+	}
+
+	// Invalid request - missing required field
+	invalidBody := `{"name": "John"}`
+	req2 := httptest.NewRequest("POST", "/api/users", strings.NewReader(invalidBody))
+	mock2, err := matcher.FindMatch(req2)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock2 != nil {
+		t.Error("Expected no match for invalid request")
+	}
+}
+
+func TestValidateSchemaWithTypes(t *testing.T) {
+	mocks := []models.Mock{
+		{
+			Name:     "Type Validation Mock",
+			Priority: 10,
+			Request: models.Request{
+				URI:    "/api/data",
+				Method: "POST",
+				ValidateSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"age": map[string]interface{}{
+							"type":    "integer",
+							"minimum": float64(0),
+							"maximum": float64(150),
+						},
+						"score": map[string]interface{}{
+							"type": "number",
+						},
+					},
+				},
+			},
+			Response: models.Response{
+				StatusCode: 200,
+				Body:       "ok",
+			},
+		},
+	}
+
+	matcher := NewMatcher(mocks)
+
+	// Valid request
+	validBody := `{"age": 25, "score": 95.5}`
+	req1 := httptest.NewRequest("POST", "/api/data", strings.NewReader(validBody))
+	mock1, err := matcher.FindMatch(req1)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock1 == nil {
+		t.Fatal("Expected match for valid request")
+	}
+
+	// Invalid request - age is string
+	invalidBody := `{"age": "25", "score": 95.5}`
+	req2 := httptest.NewRequest("POST", "/api/data", strings.NewReader(invalidBody))
+	mock2, err := matcher.FindMatch(req2)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock2 != nil {
+		t.Error("Expected no match for invalid type")
+	}
+
+	// Invalid request - age out of range
+	invalidRangeBody := `{"age": 200, "score": 95.5}`
+	req3 := httptest.NewRequest("POST", "/api/data", strings.NewReader(invalidRangeBody))
+	mock3, err := matcher.FindMatch(req3)
+	if err != nil {
+		t.Fatalf("FindMatch error: %v", err)
+	}
+	if mock3 != nil {
+		t.Error("Expected no match for out of range value")
+	}
+}

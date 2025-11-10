@@ -88,6 +88,11 @@ func (s *Server) Start() error {
 	http.HandleFunc("/__recording/export", s.handleRecordingExport)
 	http.HandleFunc("/__recording/list", s.handleRecordingList)
 
+	// Register scenario control endpoints
+	http.HandleFunc("/__scenario/list", s.handleScenarioList)
+	http.HandleFunc("/__scenario/active", s.handleScenarioActive)
+	http.HandleFunc("/__scenario/set", s.handleScenarioSet)
+
 	addr := fmt.Sprintf(":%d", s.port)
 	log.Printf("Mock server listening on http://localhost%s\n", addr)
 
@@ -105,6 +110,11 @@ func (s *Server) StartTLS(certFile, keyFile string) error {
 	http.HandleFunc("/__recording/clear", s.handleRecordingClear)
 	http.HandleFunc("/__recording/export", s.handleRecordingExport)
 	http.HandleFunc("/__recording/list", s.handleRecordingList)
+
+	// Register scenario control endpoints
+	http.HandleFunc("/__scenario/list", s.handleScenarioList)
+	http.HandleFunc("/__scenario/active", s.handleScenarioActive)
+	http.HandleFunc("/__scenario/set", s.handleScenarioSet)
 
 	addr := fmt.Sprintf(":%d", s.port)
 	log.Printf("Mock server listening on https://localhost%s (TLS enabled)\n", addr)
@@ -392,6 +402,91 @@ func (s *Server) handleRecordingList(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"count":      len(recordings),
 		"recordings": recordings,
+	}); err != nil {
+		log.Printf("Error encoding response: %v\n", err)
+	}
+}
+
+// handleScenarioList handles listing all available scenarios
+func (s *Server) handleScenarioList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.RLock()
+	scenarios := s.matcher.GetAvailableScenarios()
+	s.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"scenarios": scenarios,
+		"count":     len(scenarios),
+	}); err != nil {
+		log.Printf("Error encoding response: %v\n", err)
+	}
+}
+
+// handleScenarioActive handles getting the currently active scenario
+func (s *Server) handleScenarioActive(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.RLock()
+	activeScenario := s.matcher.GetActiveScenario()
+	s.mu.RUnlock()
+
+	// If no scenario is set, return empty string or "all"
+	if activeScenario == "" {
+		activeScenario = "all"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"active_scenario": activeScenario,
+	}); err != nil {
+		log.Printf("Error encoding response: %v\n", err)
+	}
+}
+
+// handleScenarioSet handles setting the active scenario
+func (s *Server) handleScenarioSet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get scenario from query parameter or request body
+	scenario := r.URL.Query().Get("scenario")
+	if scenario == "" {
+		// Try to read from request body
+		var requestBody map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err == nil {
+			scenario = requestBody["scenario"]
+		}
+	}
+
+	// "all" means clear the scenario (show all mocks)
+	if scenario == "all" {
+		scenario = ""
+	}
+
+	s.mu.Lock()
+	s.matcher.SetScenario(scenario)
+	s.mu.Unlock()
+
+	log.Printf("Active scenario set to: %s\n", scenario)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":          "success",
+		"active_scenario": scenario,
+		"message":         fmt.Sprintf("Active scenario set to: %s", scenario),
 	}); err != nil {
 		log.Printf("Error encoding response: %v\n", err)
 	}
