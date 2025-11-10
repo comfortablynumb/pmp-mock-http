@@ -7,6 +7,7 @@ toolchain go1.24.7
 require (
 	github.com/dop251/goja v0.0.0-20251103141225-af2ceb9156d7
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/quic-go/quic-go v0.56.0
 	github.com/tidwall/gjson v1.18.0
