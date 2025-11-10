@@ -1,0 +1,92 @@
+mocks:
+  - name: "OpenAI Chat Completions - Success"
+    priority: 10
+    request:
+      uri: "/v1/chat/completions"
+      method: "POST"
+      headers:
+        Authorization: "Bearer .*"
+      regex:
+        uri: false
+        method: false
+        headers: true
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "id": "chatcmpl-123456789",
+          "object": "chat.completion",
+          "created": 1677652288,
+          "model": "gpt-4",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "Hello! I'm a mocked OpenAI response. How can I help you today?"
+              },
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 15,
+            "total_tokens": 25
+          }
+        }
+
+  - name: "OpenAI Chat Completions - Streaming"
+    priority: 9
+    request:
+      uri: "/v1/chat/completions"
+      method: "POST"
+      headers:
+        Authorization: "Bearer .*"
+      json_path:
+        - path: "stream"
+          value: "true"
+      regex:
+        uri: false
+        method: false
+        headers: true
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "text/event-stream"
+      body: |
+        data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+        data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+
+        data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":null}]}
+
+        data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+        data: [DONE]
+
+  - name: "OpenAI Chat Completions - Invalid API Key"
+    priority: 8
+    request:
+      uri: "/v1/chat/completions"
+      method: "POST"
+      headers:
+        Authorization: "Bearer invalid.*"
+      regex:
+        uri: false
+        method: false
+        headers: true
+    response:
+      status_code: 401
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "error": {
+            "message": "Incorrect API key provided: invalid***. You can find your API key at https://platform.openai.com/account/api-keys.",
+            "type": "invalid_request_error",
+            "param": null,
+            "code": "invalid_api_key"
+          }
+        }

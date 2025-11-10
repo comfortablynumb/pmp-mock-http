@@ -1,0 +1,41 @@
+mocks:
+  - name: "OpenAI Create Embeddings"
+    priority: 10
+    request:
+      uri: "/v1/embeddings"
+      method: "POST"
+      headers:
+        Authorization: "Bearer .*"
+      regex:
+        uri: false
+        method: false
+        headers: true
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "object": "list",
+          "data": [
+            {
+              "object": "embedding",
+              "embedding": [
+                0.0023064255,
+                -0.009327292,
+                -0.0028842222,
+                0.015419235,
+                -0.013634321,
+                0.012345678,
+                -0.001234567,
+                0.009876543
+              ],
+              "index": 0
+            }
+          ],
+          "model": "text-embedding-ada-002",
+          "usage": {
+            "prompt_tokens": 8,
+            "total_tokens": 8
+          }
+        }

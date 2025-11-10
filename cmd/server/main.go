@@ -36,11 +36,12 @@ func getEnvString(key string, defaultVal string) string {
 }
 
 var (
-	port       = flag.Int("port", getEnvInt("PORT", 8083), "HTTP server port")
-	uiPort     = flag.Int("ui-port", getEnvInt("UI_PORT", 8081), "UI dashboard port")
-	mocksDir   = flag.String("mocks-dir", getEnvString("MOCKS_DIR", "mocks"), "Directory containing mock YAML files")
-	pluginsDir = flag.String("plugins-dir", getEnvString("PLUGINS_DIR", "plugins"), "Directory to store plugin repositories")
-	pluginList = flag.String("plugins", getEnvString("PLUGINS", ""), "Comma-separated list of git repository URLs to clone as plugins")
+	port                = flag.Int("port", getEnvInt("PORT", 8083), "HTTP server port")
+	uiPort              = flag.Int("ui-port", getEnvInt("UI_PORT", 8081), "UI dashboard port")
+	mocksDir            = flag.String("mocks-dir", getEnvString("MOCKS_DIR", "mocks"), "Directory containing mock YAML files")
+	pluginsDir          = flag.String("plugins-dir", getEnvString("PLUGINS_DIR", "plugins"), "Directory to store plugin repositories")
+	pluginList          = flag.String("plugins", getEnvString("PLUGINS", ""), "Comma-separated list of git repository URLs to clone as plugins")
+	pluginIncludeOnly   = flag.String("plugin-include-only", getEnvString("PLUGIN_INCLUDE_ONLY", ""), "Space-separated list of subdirectories from pmp-mock-http to include (e.g., 'openai stripe')")
 )
 
 func main() {
@@ -61,16 +62,28 @@ func main() {
 		log.Printf("Plugins: %d repositories configured\n", len(pluginRepos))
 	}
 
+	// Parse plugin include filter
+	var pluginIncludeFilter []string
+	if *pluginIncludeOnly != "" {
+		pluginIncludeFilter = strings.Fields(*pluginIncludeOnly)
+		log.Printf("Plugin include filter: %v\n", pluginIncludeFilter)
+	}
+
 	// Set up plugins (clone/update repositories)
 	var pluginDirs []string
 	if len(pluginRepos) > 0 {
-		pluginManager := plugins.NewManager(*pluginsDir, pluginRepos)
+		var pluginManager *plugins.Manager
+		if len(pluginIncludeFilter) > 0 {
+			pluginManager = plugins.NewManagerWithIncludeFilter(*pluginsDir, pluginRepos, pluginIncludeFilter)
+		} else {
+			pluginManager = plugins.NewManager(*pluginsDir, pluginRepos)
+		}
 		var err error
 		pluginDirs, err = pluginManager.SetupPlugins()
 		if err != nil {
 			log.Printf("Warning: failed to setup plugins: %v\n", err)
 		}
-		log.Printf("Loaded %d plugin(s)\n", len(pluginDirs))
+		log.Printf("Loaded %d plugin directory(ies)\n", len(pluginDirs))
 	}
 
 	// Create directories to load (mocks dir + plugin dirs)

@@ -88,6 +88,7 @@ Configuration values can be set via environment variables or command-line flags.
 | `MOCKS_DIR` | mocks | Directory containing mock YAML files |
 | `PLUGINS_DIR` | plugins | Directory to store plugin repositories |
 | `PLUGINS` | "" | Comma-separated list of git repository URLs to clone as plugins |
+| `PLUGIN_INCLUDE_ONLY` | "" | Space-separated list of subdirectories from pmp-mock-http to include |
 
 #### Command Line Flags
 
@@ -98,6 +99,7 @@ Configuration values can be set via environment variables or command-line flags.
 | `-mocks-dir` | `MOCKS_DIR` | Directory containing mock YAML files |
 | `-plugins-dir` | `PLUGINS_DIR` | Directory to store plugin repositories |
 | `-plugins` | `PLUGINS` | Comma-separated list of git repository URLs to clone as plugins |
+| `-plugin-include-only` | `PLUGIN_INCLUDE_ONLY` | Space-separated list of subdirectories from pmp-mock-http to include |
 
 **Examples:**
 
@@ -158,21 +160,46 @@ The plugin system allows you to load mock configurations from external git repos
 
 1. **Clone/Update**: On startup, the server clones each plugin repository to the plugins directory
 2. **Auto-Update**: If a plugin already exists, it's updated with `git pull`
-3. **Load Mocks**: All YAML files in the plugin repositories are loaded as mocks
+3. **Load Mocks**: All YAML files in the plugin repositories' `pmp-mock-http` directory are loaded as mocks
 4. **Hot-Reload**: Plugin directories are watched for changes, just like the main mocks directory
 5. **Priority**: Mocks from plugins are merged with local mocks, with priority determining match order
 
 #### Plugin Structure
 
-Each plugin repository should contain YAML mock files in any structure:
+**IMPORTANT**: Plugin repositories **must** contain a `pmp-mock-http` directory where all mock YAML files reside:
 
 ```
-my-api-mocks/
-├── users.yaml           # User API mocks
-├── products.yaml        # Product API mocks
-└── apis/
-    └── external.yaml    # External service mocks
+my-api-mocks-repo/
+└── pmp-mock-http/          # Required directory
+    ├── openai/             # OpenAI API mocks
+    │   ├── chat.yaml
+    │   └── completions.yaml
+    ├── stripe/             # Stripe API mocks
+    │   ├── customers.yaml
+    │   └── payments.yaml
+    └── github/             # GitHub API mocks
+        └── repos.yaml
 ```
+
+#### Selective Loading with Include Filter
+
+Use the `--plugin-include-only` flag to load only specific subdirectories from plugin repositories:
+
+```bash
+# Only load OpenAI and Stripe mocks from the plugin
+./pmp-mock-http \
+  --plugins "https://github.com/user/api-mocks.git" \
+  --plugin-include-only "openai stripe"
+
+# Using environment variable
+export PLUGIN_INCLUDE_ONLY="openai stripe"
+./pmp-mock-http --plugins "https://github.com/user/api-mocks.git"
+```
+
+This is useful when:
+- You only need mocks for specific services
+- You want to reduce memory usage by not loading all mocks
+- You want to avoid conflicts with local mock definitions
 
 #### Docker with Plugins
 

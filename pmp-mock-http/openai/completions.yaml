@@ -1,0 +1,62 @@
+mocks:
+  - name: "OpenAI Text Completions - Success"
+    priority: 10
+    request:
+      uri: "/v1/completions"
+      method: "POST"
+      headers:
+        Authorization: "Bearer .*"
+      regex:
+        uri: false
+        method: false
+        headers: true
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "id": "cmpl-123456789",
+          "object": "text_completion",
+          "created": 1677652288,
+          "model": "text-davinci-003",
+          "choices": [
+            {
+              "text": "\n\nThis is a mocked completion response from OpenAI.",
+              "index": 0,
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 5,
+            "completion_tokens": 12,
+            "total_tokens": 17
+          }
+        }
+
+  - name: "OpenAI Text Completions - Rate Limit"
+    priority: 8
+    request:
+      uri: "/v1/completions"
+      method: "POST"
+      headers:
+        Authorization: "Bearer rate-limit.*"
+      regex:
+        uri: false
+        method: false
+        headers: true
+    response:
+      status_code: 429
+      headers:
+        Content-Type: "application/json"
+        Retry-After: "20"
+      body: |
+        {
+          "error": {
+            "message": "Rate limit reached for requests",
+            "type": "requests",
+            "param": null,
+            "code": "rate_limit_exceeded"
+          }
+        }
