@@ -1,0 +1,152 @@
+mocks:
+  # OAuth2 Authorization Endpoint
+  - name: "OAuth2 Authorization Endpoint"
+    priority: 100
+    request:
+      uri: "/oauth/authorize"
+      method: "GET"
+    response:
+      status_code: 302
+      headers:
+        Location: "{{.Headers.redirect_uri}}?code=mock_auth_code_{{randomString 16}}&state={{.Headers.state}}"
+      body: ""
+
+  # OAuth2 Token Endpoint - Authorization Code Grant
+  - name: "OAuth2 Token - Authorization Code"
+    priority: 100
+    request:
+      uri: "/oauth/token"
+      method: "POST"
+      json_path:
+        - path: "grant_type"
+          value: "authorization_code"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+        Cache-Control: "no-store"
+        Pragma: "no-cache"
+      body: |
+        {
+          "access_token": "{{randomString 32}}",
+          "token_type": "Bearer",
+          "expires_in": 3600,
+          "refresh_token": "{{randomString 32}}",
+          "scope": "openid profile email"
+        }
+
+  # OAuth2 Token Endpoint - Client Credentials
+  - name: "OAuth2 Token - Client Credentials"
+    priority: 90
+    request:
+      uri: "/oauth/token"
+      method: "POST"
+      json_path:
+        - path: "grant_type"
+          value: "client_credentials"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "access_token": "{{randomString 32}}",
+          "token_type": "Bearer",
+          "expires_in": 3600,
+          "scope": "api:read api:write"
+        }
+
+  # OAuth2 Token Endpoint - Refresh Token
+  - name: "OAuth2 Token - Refresh Token"
+    priority: 90
+    request:
+      uri: "/oauth/token"
+      method: "POST"
+      json_path:
+        - path: "grant_type"
+          value: "refresh_token"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "access_token": "{{randomString 32}}",
+          "token_type": "Bearer",
+          "expires_in": 3600,
+          "refresh_token": "{{randomString 32}}"
+        }
+
+  # OAuth2 UserInfo Endpoint
+  - name: "OAuth2 UserInfo"
+    priority: 100
+    request:
+      uri: "/oauth/userinfo"
+      method: "GET"
+      headers:
+        Authorization: "Bearer .*"
+      regex:
+        headers: true
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "sub": "{{uuid}}",
+          "name": "{{firstName}} {{lastName}}",
+          "given_name": "{{firstName}}",
+          "family_name": "{{lastName}}",
+          "email": "{{email}}",
+          "email_verified": true,
+          "picture": "https://via.placeholder.com/150"
+        }
+
+  # JWKS Endpoint (JSON Web Key Set)
+  - name: "OAuth2 JWKS Endpoint"
+    priority: 100
+    request:
+      uri: "/.well-known/jwks.json"
+      method: "GET"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "keys": [
+            {
+              "kty": "RSA",
+              "use": "sig",
+              "kid": "mock-key-1",
+              "alg": "RS256",
+              "n": "{{randomString 256}}",
+              "e": "AQAB"
+            }
+          ]
+        }
+
+  # OpenID Configuration Discovery
+  - name: "OpenID Configuration"
+    priority: 100
+    request:
+      uri: "/.well-known/openid-configuration"
+      method: "GET"
+    response:
+      status_code: 200
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "issuer": "http://localhost:8083",
+          "authorization_endpoint": "http://localhost:8083/oauth/authorize",
+          "token_endpoint": "http://localhost:8083/oauth/token",
+          "userinfo_endpoint": "http://localhost:8083/oauth/userinfo",
+          "jwks_uri": "http://localhost:8083/.well-known/jwks.json",
+          "response_types_supported": ["code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token"],
+          "subject_types_supported": ["public"],
+          "id_token_signing_alg_values_supported": ["RS256"],
+          "scopes_supported": ["openid", "profile", "email", "address", "phone"],
+          "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+          "claims_supported": ["sub", "name", "given_name", "family_name", "email", "email_verified", "picture"]
+        }
