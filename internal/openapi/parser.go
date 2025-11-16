@@ -171,8 +171,6 @@ func (p *Parser) Parse(data []byte, source string) (*models.MockSpec, error) {
 	if !isJSON && !isYAML {
 		if err := json.Unmarshal(data, &map[string]interface{}{}); err == nil {
 			isJSON = true
-		} else {
-			isYAML = true
 		}
 	}
 
@@ -298,7 +296,10 @@ func (p *Parser) createMockFromOperation(path, method string, operation *Operati
 			response = &resp
 		} else if statusCode == 0 {
 			// Parse status code
-			fmt.Sscanf(code, "%d", &statusCode)
+			if _, err := fmt.Sscanf(code, "%d", &statusCode); err != nil {
+				// If parsing fails, skip this response
+				continue
+			}
 			response = &resp
 		}
 	}
