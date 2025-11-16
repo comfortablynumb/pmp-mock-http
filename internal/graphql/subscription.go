@@ -26,9 +26,8 @@ type subscriptionClient struct {
 
 // subscription represents an active subscription
 type subscription struct {
-	id        string
-	operation GraphQLOperation
-	stopChan  chan struct{}
+	id       string
+	stopChan chan struct{}
 }
 
 // WebSocket message types for graphql-ws protocol
@@ -97,7 +96,7 @@ func (h *SubscriptionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		h.mu.Lock()
 		delete(h.clients, conn)
 		h.mu.Unlock()
-		conn.Close()
+		_ = conn.Close()
 	}()
 
 	// Handle messages
@@ -123,7 +122,7 @@ func (h *SubscriptionHandler) handleClient(client *subscriptionClient) {
 		select {
 		case <-initTimer.C:
 			if !initialized {
-				client.conn.Close()
+				_ = client.conn.Close()
 				return
 			}
 		default:
@@ -253,7 +252,7 @@ func (h *SubscriptionHandler) sendConnectionAck(client *subscriptionClient) {
 	msg := SubscriptionMessage{
 		Type: MessageTypeConnectionAck,
 	}
-	client.conn.WriteJSON(msg)
+	_ = client.conn.WriteJSON(msg)
 }
 
 // sendKeepAlive sends periodic keep-alive messages
@@ -289,7 +288,7 @@ func (h *SubscriptionHandler) sendData(client *subscriptionClient, id string, re
 
 	if err := client.conn.WriteJSON(msg); err != nil {
 		if h.config.CloseOnError {
-			client.conn.Close()
+			_ = client.conn.Close()
 		}
 	}
 }
@@ -300,7 +299,7 @@ func (h *SubscriptionHandler) sendComplete(client *subscriptionClient, id string
 		ID:   id,
 		Type: MessageTypeComplete,
 	}
-	client.conn.WriteJSON(msg)
+	_ = client.conn.WriteJSON(msg)
 }
 
 // sendPong sends pong response
@@ -309,7 +308,7 @@ func (h *SubscriptionHandler) sendPong(client *subscriptionClient, payload map[s
 		Type:    MessageTypePong,
 		Payload: payload,
 	}
-	client.conn.WriteJSON(msg)
+	_ = client.conn.WriteJSON(msg)
 }
 
 // Broadcast sends an event to all subscribed clients

@@ -41,16 +41,12 @@ func NewHandler(config *GraphQLConfig) (*Handler, error) {
 
 // ServeHTTP handles GraphQL HTTP requests
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Only accept POST and GET requests
-	if r.Method != http.MethodPost && r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// Parse request
 	var req GraphQLRequest
 
-	if r.Method == http.MethodPost {
+	// Only accept POST and GET requests
+	switch r.Method {
+	case http.MethodPost:
 		contentType := r.Header.Get("Content-Type")
 
 		if strings.Contains(contentType, "application/json") {
@@ -88,7 +84,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.sendError(w, "Unsupported Content-Type", http.StatusUnsupportedMediaType)
 			return
 		}
-	} else if r.Method == http.MethodGet {
+	case http.MethodGet:
 		// GET request with query parameters
 		req.Query = r.URL.Query().Get("query")
 		req.OperationName = r.URL.Query().Get("operationName")
@@ -99,6 +95,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
 
 	// Handle introspection query
@@ -115,7 +114,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	response := h.findMatchingOperation(req)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // handleBatch handles batched GraphQL requests
@@ -127,7 +126,7 @@ func (h *Handler) handleBatch(w http.ResponseWriter, requests GraphQLBatchReques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(responses)
+	_ = json.NewEncoder(w).Encode(responses)
 }
 
 // findMatchingOperation finds a matching GraphQL operation
@@ -250,7 +249,7 @@ func (h *Handler) executeSchema(w http.ResponseWriter, req GraphQLRequest) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // sendIntrospectionResponse sends a default introspection response
@@ -275,7 +274,7 @@ func (h *Handler) sendIntrospectionResponse(w http.ResponseWriter) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // sendError sends an error response
@@ -289,7 +288,7 @@ func (h *Handler) sendError(w http.ResponseWriter, message string, statusCode in
 		},
 	}
 
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // parseSchema parses a GraphQL schema string

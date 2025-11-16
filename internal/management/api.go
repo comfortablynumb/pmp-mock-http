@@ -96,7 +96,7 @@ func (h *APIHandler) listMocks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(mocks)
+	_ = json.NewEncoder(w).Encode(mocks)
 }
 
 // createMock creates a new mock
@@ -117,7 +117,7 @@ func (h *APIHandler) createMock(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(mock)
+	_ = json.NewEncoder(w).Encode(mock)
 }
 
 // getMock retrieves a mock by ID
@@ -129,7 +129,7 @@ func (h *APIHandler) getMock(w http.ResponseWriter, r *http.Request, id string) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(mock)
+	_ = json.NewEncoder(w).Encode(mock)
 }
 
 // updateMock updates a mock
@@ -149,7 +149,7 @@ func (h *APIHandler) updateMock(w http.ResponseWriter, r *http.Request, id strin
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(mock)
+	_ = json.NewEncoder(w).Encode(mock)
 }
 
 // deleteMock deletes a mock
@@ -174,7 +174,7 @@ func (h *APIHandler) handleVersions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(versions)
+	_ = json.NewEncoder(w).Encode(versions)
 }
 
 // handleVersion handles individual version requests
@@ -201,7 +201,7 @@ func (h *APIHandler) handleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(mockVersion)
+	_ = json.NewEncoder(w).Encode(mockVersion)
 }
 
 // handleRollback handles rollback requests
@@ -231,7 +231,7 @@ func (h *APIHandler) handleRollback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(mock)
+	_ = json.NewEncoder(w).Encode(mock)
 }
 
 // handleTemplates handles template listing and creation
@@ -246,7 +246,7 @@ func (h *APIHandler) handleTemplates(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(templates)
+		_ = json.NewEncoder(w).Encode(templates)
 
 	case http.MethodPost:
 		var req CreateTemplateRequest
@@ -263,7 +263,7 @@ func (h *APIHandler) handleTemplates(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(template)
+		_ = json.NewEncoder(w).Encode(template)
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -286,7 +286,7 @@ func (h *APIHandler) handleTemplateByID(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(template)
+	_ = json.NewEncoder(w).Encode(template)
 }
 
 // handleInstantiateTemplate handles template instantiation
@@ -310,7 +310,7 @@ func (h *APIHandler) handleInstantiateTemplate(w http.ResponseWriter, r *http.Re
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(mock)
+	_ = json.NewEncoder(w).Encode(mock)
 }
 
 // handleImport handles mock import
@@ -333,7 +333,7 @@ func (h *APIHandler) handleImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"imported": count,
 	})
 }
@@ -367,7 +367,7 @@ func (h *APIHandler) handleExport(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 	}
 
-	w.Write([]byte(data))
+	_, _ = w.Write([]byte(data))
 }
 
 // handleStats handles statistics requests
@@ -380,7 +380,7 @@ func (h *APIHandler) handleStats(w http.ResponseWriter, r *http.Request) {
 	stats := h.manager.GetStats()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	_ = json.NewEncoder(w).Encode(stats)
 }
 
 // Helper function to parse version URL

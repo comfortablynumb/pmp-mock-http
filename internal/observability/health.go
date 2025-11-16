@@ -95,7 +95,7 @@ func HealthHandler() http.HandlerFunc {
 			w.WriteHeader(http.StatusOK)
 		}
 
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}
 }
 
@@ -134,7 +134,7 @@ func ReadinessHandler() http.HandlerFunc {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
 
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}
 }
 
@@ -143,7 +143,7 @@ func LivenessHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"alive":  true,
 			"uptime": time.Since(startTime).Seconds(),
 		})

@@ -89,11 +89,11 @@ func TracingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		ctx, span := GetTracer().Start(ctx, fmt.Sprintf("%s %s", r.Method, r.URL.Path),
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
-				semconv.HTTPMethod(r.Method),
-				semconv.HTTPTarget(r.URL.Path),
-				semconv.HTTPScheme(r.URL.Scheme),
+				attribute.String("http.request.method", r.Method),
+				attribute.String("url.path", r.URL.Path),
+				attribute.String("url.scheme", r.URL.Scheme),
 				attribute.String("http.host", r.Host),
-				semconv.HTTPUserAgent(r.UserAgent()),
+				attribute.String("user_agent.original", r.UserAgent()),
 				attribute.String("http.client_ip", r.RemoteAddr),
 			),
 		)
@@ -110,7 +110,7 @@ func TracingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// Record response attributes
 		span.SetAttributes(
-			semconv.HTTPStatusCode(wrapped.statusCode),
+			attribute.Int("http.response.status_code", wrapped.statusCode),
 		)
 
 		// Mark span as error if status >= 400

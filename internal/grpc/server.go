@@ -183,7 +183,7 @@ func (s *Server) handleUnary(stream grpc.ServerStream, method *MethodConfig, md 
 	// Send metadata if configured
 	if method.Response != nil && len(method.Response.Metadata) > 0 {
 		respMd := metadata.New(method.Response.Metadata)
-		stream.SendHeader(respMd)
+		_ = stream.SendHeader(respMd)
 	}
 
 	// Send response
@@ -226,7 +226,7 @@ func (s *Server) handleServerStream(stream grpc.ServerStream, method *MethodConf
 	// Send metadata if configured
 	if len(method.Responses) > 0 && len(method.Responses[0].Metadata) > 0 {
 		respMd := metadata.New(method.Responses[0].Metadata)
-		stream.SendHeader(respMd)
+		_ = stream.SendHeader(respMd)
 	}
 
 	// Send stream responses
@@ -267,6 +267,8 @@ func (s *Server) handleClientStream(stream grpc.ServerStream, method *MethodConf
 
 	// Process messages (could aggregate, validate, etc.)
 	// For now, just send configured response
+	// Note: messages variable is collected but not yet processed in this implementation
+	_ = messages
 
 	if method.Response != nil {
 		resp := &MockMessage{

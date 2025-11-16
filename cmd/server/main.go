@@ -79,11 +79,10 @@ var (
 	// Observability flags
 	logLevel            = flag.String("log-level", getEnvString("LOG_LEVEL", "info"), "Log level (debug, info, warn, error)")
 	enableMetrics       = flag.Bool("enable-metrics", getEnvBool("ENABLE_METRICS", true), "Enable Prometheus metrics")
-	metricsPort         = flag.Int("metrics-port", getEnvInt("METRICS_PORT", 9090), "Prometheus metrics port")
 	enableTracing       = flag.Bool("enable-tracing", getEnvBool("ENABLE_TRACING", false), "Enable OpenTelemetry tracing")
 	otlpEndpoint        = flag.String("otlp-endpoint", getEnvString("OTLP_ENDPOINT", "localhost:4317"), "OTLP collector endpoint")
 	enableHealthCheck   = flag.Bool("enable-health", getEnvBool("ENABLE_HEALTH", true), "Enable health check endpoints")
-	healthPort          = flag.Int("health-port", getEnvInt("HEALTH_PORT", 8080), "Health check endpoints port")
+	healthPort          = flag.Int("health-port", getEnvInt("HEALTH_PORT", 8080), "Health check and metrics endpoints port")
 
 	// Management API flags
 	enableManagementAPI = flag.Bool("enable-management", getEnvBool("ENABLE_MANAGEMENT", true), "Enable management API")
