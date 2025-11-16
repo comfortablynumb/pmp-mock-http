@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -10,7 +12,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/comfortablynumb/pmp-mock-http/internal/graphql"
+	"github.com/comfortablynumb/pmp-mock-http/internal/grpc"
 	"github.com/comfortablynumb/pmp-mock-http/internal/loader"
+	"github.com/comfortablynumb/pmp-mock-http/internal/management"
+	"github.com/comfortablynumb/pmp-mock-http/internal/observability"
 	"github.com/comfortablynumb/pmp-mock-http/internal/plugins"
 	"github.com/comfortablynumb/pmp-mock-http/internal/proxy"
 	"github.com/comfortablynumb/pmp-mock-http/internal/server"
@@ -18,6 +24,7 @@ import (
 	"github.com/comfortablynumb/pmp-mock-http/internal/ui"
 	"github.com/comfortablynumb/pmp-mock-http/internal/validator"
 	"github.com/comfortablynumb/pmp-mock-http/internal/watcher"
+	"go.uber.org/zap"
 )
 
 // getEnvInt gets an integer value from environment variable, or returns the default
@@ -68,10 +75,71 @@ var (
 	corsMethods         = flag.String("cors-methods", getEnvString("CORS_METHODS", "GET,POST,PUT,DELETE,PATCH,OPTIONS"), "CORS allowed methods")
 	corsHeaders         = flag.String("cors-headers", getEnvString("CORS_HEADERS", "Content-Type,Authorization"), "CORS allowed headers")
 	validateMocks       = flag.Bool("validate-mocks", getEnvBool("VALIDATE_MOCKS", true), "Validate mock configurations on startup")
+
+	// Observability flags
+	logLevel            = flag.String("log-level", getEnvString("LOG_LEVEL", "info"), "Log level (debug, info, warn, error)")
+	enableMetrics       = flag.Bool("enable-metrics", getEnvBool("ENABLE_METRICS", true), "Enable Prometheus metrics")
+	metricsPort         = flag.Int("metrics-port", getEnvInt("METRICS_PORT", 9090), "Prometheus metrics port")
+	enableTracing       = flag.Bool("enable-tracing", getEnvBool("ENABLE_TRACING", false), "Enable OpenTelemetry tracing")
+	otlpEndpoint        = flag.String("otlp-endpoint", getEnvString("OTLP_ENDPOINT", "localhost:4317"), "OTLP collector endpoint")
+	enableHealthCheck   = flag.Bool("enable-health", getEnvBool("ENABLE_HEALTH", true), "Enable health check endpoints")
+	healthPort          = flag.Int("health-port", getEnvInt("HEALTH_PORT", 8080), "Health check endpoints port")
+
+	// Management API flags
+	enableManagementAPI = flag.Bool("enable-management", getEnvBool("ENABLE_MANAGEMENT", true), "Enable management API")
+	managementPort      = flag.Int("management-port", getEnvInt("MANAGEMENT_PORT", 8082), "Management API port")
+	loadTemplates       = flag.Bool("load-templates", getEnvBool("LOAD_TEMPLATES", true), "Load default mock templates")
+
+	// GraphQL flags
+	enableGraphQL       = flag.Bool("enable-graphql", getEnvBool("ENABLE_GRAPHQL", false), "Enable GraphQL support")
+	graphqlPort         = flag.Int("graphql-port", getEnvInt("GRAPHQL_PORT", 8084), "GraphQL server port")
+
+	// gRPC flags
+	enableGRPC          = flag.Bool("enable-grpc", getEnvBool("ENABLE_GRPC", false), "Enable gRPC support")
+	grpcPort            = flag.Int("grpc-port", getEnvInt("GRPC_PORT", 9000), "gRPC server port")
 )
 
 func main() {
 	flag.Parse()
+
+	// Initialize observability (structured logging)
+	isDevelopment := *logLevel == "debug"
+	if err := observability.InitLogger(*logLevel, isDevelopment); err != nil {
+		log.Fatalf("Failed to initialize logger: %v\n", err)
+	}
+	defer observability.Sync()
+
+	observability.Info("Starting PMP Mock HTTP Server",
+		zap.Int("port", *port),
+		zap.Int("ui_port", *uiPort),
+		zap.String("mocks_dir", *mocksDir),
+		zap.Bool("tls_enabled", *tlsEnabled),
+	)
+
+	// Initialize tracing if enabled
+	var tracingShutdown func(context.Context) error
+	if *enableTracing {
+		var err error
+		tracingShutdown, err = observability.InitTracing("pmp-mock-http", *otlpEndpoint)
+		if err != nil {
+			observability.Warn("Failed to initialize tracing", zap.Error(err))
+		} else {
+			observability.Info("Tracing enabled", zap.String("otlp_endpoint", *otlpEndpoint))
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := tracingShutdown(ctx); err != nil {
+					observability.Error("Failed to shutdown tracing", zap.Error(err))
+				}
+			}()
+		}
+	}
+
+	// Register default health checks
+	if *enableHealthCheck {
+		observability.RegisterDefaultHealthChecks()
+		observability.Info("Health checks enabled", zap.Int("health_port", *healthPort))
+	}
 
 	log.Printf("Starting PMP Mock HTTP Server...\n")
 	log.Printf("Mock server port: %d\n", *port)
@@ -176,6 +244,124 @@ func main() {
 			log.Fatalf("UI server error: %v\n", err)
 		}
 	}()
+
+	// Initialize and start Management API
+	var mockManager *management.Manager
+	if *enableManagementAPI {
+		mockManager = management.NewManager()
+
+		// Load default templates if enabled
+		if *loadTemplates {
+			if err := management.LoadDefaultTemplates(mockManager); err != nil {
+				observability.Warn("Failed to load default templates", zap.Error(err))
+			} else {
+				observability.Info("Loaded default mock templates")
+			}
+		}
+
+		// Create management API handler
+		managementHandler := management.NewAPIHandler(mockManager)
+		managementMux := http.NewServeMux()
+		managementHandler.RegisterRoutes(managementMux)
+
+		// Start management API server
+		managementServer := &http.Server{
+			Addr:    ":" + strconv.Itoa(*managementPort),
+			Handler: managementMux,
+		}
+
+		go func() {
+			observability.Info("Starting Management API server", zap.Int("port", *managementPort))
+			if err := managementServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				observability.Error("Management API server error", zap.Error(err))
+			}
+		}()
+
+		log.Printf("Management API running on port %d\n", *managementPort)
+	}
+
+	// Initialize and start Health/Metrics server
+	if *enableHealthCheck || *enableMetrics {
+		healthMux := http.NewServeMux()
+
+		if *enableHealthCheck {
+			healthMux.HandleFunc("/health", observability.HealthHandler())
+			healthMux.HandleFunc("/ready", observability.ReadinessHandler())
+			healthMux.HandleFunc("/live", observability.LivenessHandler())
+		}
+
+		if *enableMetrics {
+			healthMux.Handle("/metrics", observability.MetricsHandler())
+		}
+
+		healthServer := &http.Server{
+			Addr:    ":" + strconv.Itoa(*healthPort),
+			Handler: healthMux,
+		}
+
+		go func() {
+			observability.Info("Starting Health/Metrics server", zap.Int("port", *healthPort))
+			if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				observability.Error("Health/Metrics server error", zap.Error(err))
+			}
+		}()
+
+		log.Printf("Health/Metrics endpoints running on port %d\n", *healthPort)
+	}
+
+	// Initialize and start GraphQL server
+	if *enableGraphQL {
+		graphqlConfig := &graphql.GraphQLConfig{
+			Introspection: true,
+			Operations:    []graphql.GraphQLOperation{},
+		}
+
+		graphqlHandler, err := graphql.NewHandler(graphqlConfig)
+		if err != nil {
+			observability.Error("Failed to create GraphQL handler", zap.Error(err))
+		} else {
+			graphqlMux := http.NewServeMux()
+			graphqlMux.Handle("/graphql", graphqlHandler)
+
+			graphqlServer := &http.Server{
+				Addr:    ":" + strconv.Itoa(*graphqlPort),
+				Handler: graphqlMux,
+			}
+
+			go func() {
+				observability.Info("Starting GraphQL server", zap.Int("port", *graphqlPort))
+				if err := graphqlServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					observability.Error("GraphQL server error", zap.Error(err))
+				}
+			}()
+
+			log.Printf("GraphQL server running on port %d\n", *graphqlPort)
+		}
+	}
+
+	// Initialize and start gRPC server
+	if *enableGRPC {
+		grpcConfig := &grpc.GRPCConfig{
+			Services:    []grpc.ServiceConfig{},
+			Reflection:  true,
+			HealthCheck: true,
+		}
+
+		grpcServer, err := grpc.NewServer(grpcConfig)
+		if err != nil {
+			observability.Error("Failed to create gRPC server", zap.Error(err))
+		} else {
+			go func() {
+				addr := ":" + strconv.Itoa(*grpcPort)
+				observability.Info("Starting gRPC server", zap.Int("port", *grpcPort))
+				if err := grpcServer.Start(addr); err != nil {
+					observability.Error("gRPC server error", zap.Error(err))
+				}
+			}()
+
+			log.Printf("gRPC server running on port %d\n", *grpcPort)
+		}
+	}
 
 	// Create reload function for the watcher
 	reloadFn := func() error {

@@ -15,6 +15,7 @@ import (
 	"github.com/comfortablynumb/pmp-mock-http/internal/callback"
 	"github.com/comfortablynumb/pmp-mock-http/internal/matcher"
 	"github.com/comfortablynumb/pmp-mock-http/internal/models"
+	"github.com/comfortablynumb/pmp-mock-http/internal/observability"
 	"github.com/comfortablynumb/pmp-mock-http/internal/proxy"
 	"github.com/comfortablynumb/pmp-mock-http/internal/recorder"
 	"github.com/comfortablynumb/pmp-mock-http/internal/sse"
@@ -22,6 +23,7 @@ import (
 	"github.com/comfortablynumb/pmp-mock-http/internal/tracker"
 	"github.com/comfortablynumb/pmp-mock-http/internal/websocket"
 	"github.com/quic-go/quic-go/http3"
+	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
 
@@ -281,6 +283,11 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	mock, err := s.matcher.FindMatch(r)
 	if err != nil {
 		log.Printf("Error matching request: %v\n", err)
+		observability.Error("Failed to match request",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.Error(err),
+		)
 		http.Error(w, "Error processing request", http.StatusInternalServerError)
 		if s.tracker != nil {
 			s.tracker.Log(tracker.RequestLog{
@@ -294,6 +301,11 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	if mock == nil {
 		log.Printf("No mock found for %s %s\n", r.Method, r.URL.Path)
+		observability.RecordMockMatchFailure()
+		observability.Debug("No mock found for request",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+		)
 
 		// If proxy is configured, forward the request
 		if s.proxyClient != nil {
@@ -303,6 +315,8 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Forwarding request to proxy\n")
 			if err := s.proxyClient.Forward(w, r); err != nil {
 				log.Printf("Proxy error: %v\n", err)
+				observability.RecordProxyRequest("error")
+				observability.Error("Proxy forward error", zap.Error(err))
 				http.Error(w, "Proxy error", http.StatusBadGateway)
 				if s.tracker != nil {
 					s.tracker.Log(tracker.RequestLog{
@@ -311,6 +325,8 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 						Response: "Proxy error", RemoteAddr: r.RemoteAddr,
 					})
 				}
+			} else {
+				observability.RecordProxyRequest("success")
 			}
 			// Proxy handled the request, don't track it as not found
 			return
@@ -329,16 +345,26 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Matched mock: %s\n", mock.Name)
+	observability.RecordMockMatch(mock.Name)
+	observability.Debug("Mock matched",
+		zap.String("mock_name", mock.Name),
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+	)
 
 	// Handle WebSocket protocol
 	if mock.Protocol == "websocket" {
 		log.Printf("Handling WebSocket connection for mock: %s\n", mock.Name)
+		observability.RecordWebSocketConnection(1)
 		s.handleWebSocket(w, r, mock)
+		observability.RecordWebSocketConnection(-1)
 		return
 	}
 
 	// Handle SSE protocol
 	if mock.Protocol == "sse" {
+		observability.RecordSSEConnection(1)
+		defer observability.RecordSSEConnection(-1)
 		log.Printf("Handling SSE stream for mock: %s\n", mock.Name)
 		s.handleSSE(w, r, mock)
 		return
@@ -430,6 +456,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		s.recorder.Record(r.Method, r.URL.Path, headers, bodyStr,
 			mock.Response.StatusCode, respHeaders, responseBody)
+		observability.RecordRecordedRequest()
 	}
 }
 

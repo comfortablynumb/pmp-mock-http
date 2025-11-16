@@ -1,7 +1,6 @@
 package grpc
 
 import (
-	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"

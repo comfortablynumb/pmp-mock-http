@@ -92,9 +92,9 @@ func TracingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 				semconv.HTTPMethod(r.Method),
 				semconv.HTTPTarget(r.URL.Path),
 				semconv.HTTPScheme(r.URL.Scheme),
-				semconv.HTTPHost(r.Host),
+				attribute.String("http.host", r.Host),
 				semconv.HTTPUserAgent(r.UserAgent()),
-				semconv.HTTPClientIP(r.RemoteAddr),
+				attribute.String("http.client_ip", r.RemoteAddr),
 			),
 		)
 		defer span.End()

@@ -1,7 +1,6 @@
 package graphql
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync"
@@ -47,14 +46,10 @@ const (
 
 // WebSocket message types for graphql-transport-ws protocol
 const (
-	MessageTypeConnectionInitTransport = "connection_init"
-	MessageTypeConnectionAckTransport  = "connection_ack"
-	MessageTypePing                    = "ping"
-	MessageTypePong                    = "pong"
-	MessageTypeSubscribe               = "subscribe"
-	MessageTypeNext                    = "next"
-	MessageTypeError2                  = "error"
-	MessageTypeComplete2               = "complete"
+	MessageTypePing      = "ping"
+	MessageTypePong      = "pong"
+	MessageTypeSubscribe = "subscribe"
+	MessageTypeNext      = "next"
 )
 
 // SubscriptionMessage represents a WebSocket message
@@ -139,7 +134,7 @@ func (h *SubscriptionHandler) handleClient(client *subscriptionClient) {
 			}
 
 			switch msg.Type {
-			case MessageTypeConnectionInit, MessageTypeConnectionInitTransport:
+			case MessageTypeConnectionInit:
 				initialized = true
 				initTimer.Stop()
 				h.sendConnectionAck(client)
